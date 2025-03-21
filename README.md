@@ -14,16 +14,27 @@ A challenging 2D runner game for Android where players control a bird that must 
 ## How to Play
 
 1. **Start the Game**: Tap anywhere on the screen to begin
-2. **Basic Jump**: Tap briefly for a standard jump
-3. **Power Jump**: Hold your tap longer for a higher jump (up to 3x higher)
-4. **Color Abilities**: As you hold your tap, the bird changes color:
-   - **Yellow**: Initial color, standard jumping ability
-   - **Orange**: Hold tap for 0.2 seconds to activate orange state
-     - 3.25× jump power
-     - Increased speed
-     - 20% larger bird
-     - Lasts for 5 seconds
-   - **Future Colors**: More abilities coming in future updates
+2. **Basic Jump**: Tap briefly for a standard jump (1.5x higher than previous versions)
+3. **Power Jump**: Hold your tap longer for specific abilities
+
+## Color Modes
+
+- **Yellow (Normal)**: 
+  - Initial mode with standard speed
+  - Enhanced jump height (1.5x)
+  - Full screen vertical movement
+
+- **Orange Mode**: 
+  - Activate by holding tap for 0.4-0.65 seconds
+  - 2× game speed
+  - Higher jump power
+  - Access to full screen vertical movement
+
+- **Pink Mode**:
+  - Activate by holding tap for 0.65+ seconds
+  - 2× game speed
+  - Direct vertical control (slide up/down)
+  - Bubble protection effect
 
 ## Controls
 
@@ -35,7 +46,6 @@ A challenging 2D runner game for Android where players control a bird that must 
 
 - +1 point for each obstacle you successfully navigate past
 - Every 10 points advances you to the next level
-- The bird grows larger with each level
 - Your high score is saved between sessions
 
 ## Tips

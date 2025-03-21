@@ -1,7 +1,7 @@
 package com.example.test.game
 
 /**
- * Runner Game - Version 2.2
+ * Runner Game - Version 2.5
  * 
  * Features:
  * - Smooth scrolling with key-based Canvas recomposition
@@ -51,6 +51,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import kotlin.random.Random
 
 // Color helper functions
 fun ComposeColor.darker(factor: Float): ComposeColor {
@@ -76,7 +78,37 @@ fun GameScreen(
     context: Context,
     soundManager: SoundManager
 ) {
-    var game by remember { mutableStateOf(RunnerGame(context, soundManager)) }
+    // Log once at entry but don't do this on every recomposition
+    LaunchedEffect(true) {
+        Log.d("GameScreen", "Creating GameScreen composable once")
+    }
+    
+    // Initialize with proper time values to prevent accidental Pink mode
+    val initialTime = System.currentTimeMillis()
+    
+    // Create a single game instance using remember to keep it alive across recompositions
+    // Important: Use a stable key structure for remember, not mutableState that changes
+    val game = remember(Unit) { 
+        RunnerGame(context, soundManager).also {
+            // Reset the game instance completely before use
+            try {
+                // Force to normal mode immediately
+                it.setNormalMode()
+                
+                // Reset all key parameters
+                val currentMode = it.getCurrentMode()
+                if (currentMode != GameMode.NORMAL) {
+                    Log.e("GameScreen", "CRITICAL: Game created in non-normal mode: $currentMode")
+                }
+                
+                Log.d("GameScreen", "Created stable RunnerGame instance in NormalMode. Current mode: ${it.getCurrentMode()}")
+            } catch (e: Exception) {
+                Log.e("GameScreen", "Error initializing game instance: ${e.message}", e)
+            }
+        }
+    }
+    
+    // Use mutableStateOf for reactive state values
     var score by remember { mutableStateOf(0) }
     var highScore by remember { mutableStateOf(0) }
     var shakeOffset by remember { mutableStateOf(Offset(0f, 0f)) }
@@ -86,8 +118,8 @@ fun GameScreen(
     // Bird trail and orange state
     var isOrangeState by remember { mutableStateOf(false) }
     var orangeStateTimer by remember { mutableStateOf(0f) }
-    var tapStartTime by remember { mutableStateOf(0L) }
-    var tapDuration by remember { mutableStateOf(0L) }
+    var tapStartTime by remember { mutableStateOf(initialTime) } // Initialize with current time
+    var tapDuration by remember { mutableStateOf(0L) } // Initialize to zero
     var lastBirdY by remember { mutableStateOf(0f) }
     val trailPositions = remember { mutableStateListOf<Offset>() }
     
@@ -98,7 +130,7 @@ fun GameScreen(
     val ORANGE_STATE_DURATION = 5000f  // 5 seconds in milliseconds
     
     // Game state
-    var isTapping by remember { mutableStateOf(false) }
+    var isTapping by remember { mutableStateOf(false) } // Initialize to not tapping
     var gameState by remember { mutableStateOf(0) }
     var lastFrameTime by remember { mutableStateOf(System.nanoTime()) }
     var frameCount by remember { mutableStateOf(0) }
@@ -107,6 +139,11 @@ fun GameScreen(
     
     // This state is used to force Canvas recomposition
     var frameKey by remember { mutableStateOf(0) }
+    
+    // Pink mode drag handling
+    var isPinkDragging by remember { mutableStateOf(false) }
+    var pinkInitialTouchY by remember { mutableStateOf(0f) }
+    var pinkInitialBirdY by remember { mutableStateOf(0f) }
     
     // Function to trigger screen shake
     fun startScreenShake() {
@@ -127,7 +164,7 @@ fun GameScreen(
                     
                     // Check if game was playing but is now stopped (collision)
                     val wasPlaying = game.isPlaying
-                    game.update(deltaTime, isOrangeState)
+                    game.update()
                     if (wasPlaying && !game.isPlaying) {
                         startScreenShake()
                         // Reset tapping state when game ends
@@ -137,8 +174,15 @@ fun GameScreen(
                         orangeStateTimer = 0f
                         isTransitioningFromOrangeState = false
                         tapDuration = 0L
+                        tapStartTime = System.currentTimeMillis() // Reset tap start time
                         // Reset bird scale when game ends
                         game.updateBirdScale(1.0f)
+                        
+                        // Reset any active game modes
+                        game.setNormalMode()
+                        
+                        // Log that collision handling completed successfully
+                        Log.d("GameScreen", "Collision detected and handled - game stopped")
                     }
                     
                     // Update orange state timer (moved outside of tapping check to ensure it expires correctly)
@@ -151,15 +195,13 @@ fun GameScreen(
                             // Reset bird scale when orange mode expires
                             game.updateBirdScale(1.0f)
                             
+                            // Reset game mode to normal
+                            game.setNormalMode()
+                            
                             // Set transition flag if tap is still being held
                             if (isTapping) {
                                 isTransitioningFromOrangeState = true
                                 // Force a recalculation of tap duration to update the color
-                                tapStartTime = System.currentTimeMillis() - tapDuration
-                                Log.d("GameScreen", "🔄 Transitioning from orange state while tapping")
-                                
-                                // Add additional measures to force color update
-                                // This attempts to break any stale color calculation
                                 tapDuration = 0L
                                 tapStartTime = System.currentTimeMillis()
                             } else {
@@ -173,38 +215,13 @@ fun GameScreen(
                     // Handle tap input
                     if (game.isPlaying) {
                         if (isTapping) {
+                            // Only update tap duration if actually tapping
                             tapDuration = System.currentTimeMillis() - tapStartTime
                             Log.d("GameScreen", "Tap time: $tapDuration")
-                            
-                            // Remove orange state activation from here - only show color change while pressing
-                            // Just track if the tap is long enough to trigger orange mode on release
-                            // Don't actually enter orange mode yet
-                                
-                            // Update bird's jump based on tap duration
-                            if (tapDuration > 100) {
-                                game.updateChargingJump(tapDuration)
-                            }
                         } else {
-                            // Check for orange state activation on release
-                            if (tapDuration > 200 && !isOrangeState) {
-                                isOrangeState = true
-                                orangeStateTimer = 0f
-                                game.applySoundEffect(SoundEffectType.DOUBLE_BEEP)
-                                
-                                // Apply scale increase ONLY when entering orange mode (not during tap)
-                                val orangeScale = 1.2f
-                                game.updateBirdScale(orangeScale)
-                                
-                                Log.d("GameScreen", "🔥 ORANGE STATE ACTIVATED ON RELEASE! tapDuration: $tapDuration")
-                            } else {
-                                // Reset to normal scale when orange mode not activated
-                                if (!isOrangeState) {
-                                    game.updateBirdScale(1.0f)
-                                }
-                            }
-                            
+                            // If not tapping, ensure that tapDuration is zero
+                            // No mode activation here - moved to tap release handler
                             tapDuration = 0L
-                            Log.d("GameScreen", "Tap released, resetting tapDuration")
                         }
                     }
                     
@@ -289,7 +306,34 @@ fun GameScreen(
             try {
                 Log.d("GameScreen", "Initializing game with size: ${canvasSize.width} x ${canvasSize.height}")
                 game.initialize(canvasSize.width, canvasSize.height)
+                
+                // Explicitly set all state variables to default values
+                isOrangeState = false
+                orangeStateTimer = 0f
+                
+                // Reset tap state
+                val safeInitialTime = System.currentTimeMillis()
+                tapStartTime = safeInitialTime
+                tapDuration = 0L
+                isTapping = false
+                
+                // Force the game to Normal mode multiple times to ensure it sticks
+                game.setNormalMode()
+                
+                // Double check game mode after initialization and force if needed
+                val currentMode = game.getCurrentMode()
+                if (currentMode != GameMode.NORMAL) {
+                    Log.w("GameScreen", "WARNING: Game mode is $currentMode after initialization, forcing NORMAL!")
+                    game.setNormalMode()
+                }
+                
+                // Force another check to be absolutely sure
+                if (game.getCurrentMode() != GameMode.NORMAL) {
+                    Log.e("GameScreen", "CRITICAL: Still not in NORMAL mode after forced reset!")
+                }
+                
                 isInitialized = true
+                Log.d("GameScreen", "Game initialized in NORMAL mode, current mode: ${game.getCurrentMode()}, tapDuration: $tapDuration")
             } catch (e: Exception) {
                 Log.e("GameScreen", "Error initializing game: ${e.message}", e)
             }
@@ -304,21 +348,38 @@ fun GameScreen(
                     if (isInitialized) {
                         Log.d("GameScreen", "Tap down detected at ${System.currentTimeMillis()}")
                         
-                        // If the game is over, make sure orange state variables are reset
+                        // If the game is over, restart the game on tap
                         if (!game.isPlaying) {
-                            isOrangeState = false
-                            orangeStateTimer = 0f
-                            isTransitioningFromOrangeState = false
-                            tapDuration = 0L
+                            try {
+                                // Completely reset all state variables
+                                isOrangeState = false
+                                orangeStateTimer = 0f
+                                isTransitioningFromOrangeState = false
+                                
+                                // Reset tap timing - critical for proper mode detection
+                                val safeTime = System.currentTimeMillis()
+                                tapStartTime = safeTime
+                                tapDuration = 0L
+                                
+                                // Reset game state 
+                                gameState = 0
+                                
+                                // Force the game to normal mode
+                                game.setNormalMode()
+                                
+                                // This will start a fresh game
+                                isTapping = true
+                                
+                                Log.d("GameScreen", "Restarting game after collision with reset state: mode=${game.getCurrentMode()}, isOrangeState=$isOrangeState")
+                            } catch (e: Exception) {
+                                Log.e("GameScreen", "Error restarting game: ${e.message}", e)
+                            }
+                        } else {
+                            // Normal tap behavior for ongoing game
+                            tapStartTime = System.currentTimeMillis()
+                            isTapping = true
+                            game.onTapDown()
                         }
-                        
-                        tapStartTime = System.currentTimeMillis()
-                        
-                        // Start tracking tap duration
-                        isTapping = true
-                        
-                        // Call game's onTapDown
-                        game.onTapDown()
                         
                         // Wait for release
                         val released = tryAwaitRelease()
@@ -329,16 +390,141 @@ fun GameScreen(
                         // Reset transition flag when releasing tap
                         isTransitioningFromOrangeState = false
                         
-                        if (released) {
+                        if (released && game.isPlaying) {
                             Log.d("GameScreen", "Tap up detected at ${System.currentTimeMillis()}")
-                            // Pass the orange state information to onTapUp
-                            if (isOrangeState) {
-                                Log.d("GameScreen", "Jumping in ORANGE state")
+                            
+                            // Store final tap duration for mode activation
+                            val finalTapDuration = tapDuration
+                            Log.d("GameScreen", "Final tap duration on release: $finalTapDuration")
+                            
+                            // Calculate the actual cycle position at release time
+                            val orangeTime = 400 // 0.4 seconds (increased from 300ms)
+                            val pinkTime = 650   // 0.65 seconds (increased slightly from 600ms)
+                            val cycleTime = 900  // 0.9 seconds - full cycle time
+                            
+                            // Use modulo to determine the cyclic position
+                            val cyclicDuration = finalTapDuration % cycleTime
+                            
+                            // Ensure we're not in a special mode already
+                            if (game.getCurrentMode() == GameMode.NORMAL && !isOrangeState) {
+                                Log.d("GameScreen", "Checking mode activation - cyclic duration: $cyclicDuration")
+                                
+                                if (cyclicDuration >= orangeTime && cyclicDuration < pinkTime) {
+                                    // Activate Orange Mode - if we're in the orange part of the cycle
+                                    Log.d("GameScreen", "🔥 ORANGE STATE ACTIVATED ON RELEASE! cyclic: $cyclicDuration")
+                                    isOrangeState = true
+                                    orangeStateTimer = 0f
+                                    
+                                    // Move scale update responsibility to RunnerGame
+                                    // Activate Orange Mode in game class - this will handle scaling
+                                    game.activateOrangeMode()
+                                    
+                                    // Orange Mode jump with extra power
+                                    game.jump(2.0f)
+                                } else if (cyclicDuration >= pinkTime) {
+                                    // Activate Pink Mode - if we're in the pink part of the cycle
+                                    Log.d("GameScreen", "🎀 PINK MODE ACTIVATED ON RELEASE! cyclic: $cyclicDuration")
+                                    
+                                    // Remove scale update before mode activation - we'll let RunnerGame handle it
+                                    
+                                    // Explicitly activate Pink Mode in game class - this will handle scaling
+                                    game.activatePinkMode()
+                                    
+                                    // No jump in Pink Mode - handled by sliding
+                                } else {
+                                    // Normal mode - Yellow part of the cycle
+                                    // Basic jump with tap power proportional to tap duration
+                                    val tapPower = min(2.0f, 1.0f + finalTapDuration / 600f)
+                                    Log.d("GameScreen", "Normal jump with power: $tapPower")
+                                    game.jump(tapPower)
+                                }
+                            } else {
+                                // Already in a special mode
+                                if (isOrangeState) {
+                                    Log.d("GameScreen", "Jumping in ORANGE state")
+                                    // Use higher jump multiplier for orange mode
+                                    game.jump(2.0f)
+                                } else if (game.getCurrentMode() == GameMode.PINK) {
+                                    Log.d("GameScreen", "In PINK mode - not jumping")
+                                    // No jump in Pink mode - handled by vertical movement
+                                } else {
+                                    // Fallback - should not happen but just in case
+                                    Log.d("GameScreen", "Unexpected state - defaulting to normal jump")
+                                    game.jump(1.0f)
+                                }
                             }
-                            game.onTapUp(tapDuration, isOrangeState)
+                            
+                            // Reset tap duration after processing the release action
+                            tapDuration = 0L
                         }
                     } else {
                         Log.d("GameScreen", "Tap ignored - game not initialized")
+                    }
+                }
+            )
+        }
+        .pointerInput(Unit) {
+            // Handle vertical drag for Pink Mode
+            detectVerticalDragGestures(
+                onDragStart = { offset ->
+                    // Start position for vertical drag
+                    // Only handle drag in Pink Mode - add additional safety checks
+                    val currentGameMode = game.getCurrentMode()
+                    if (currentGameMode == GameMode.PINK && game.isPlaying) {
+                        // Store the initial touch position for reference
+                        pinkInitialTouchY = offset.y
+                        isPinkDragging = true
+                        
+                        // Store the bird's initial position
+                        pinkInitialBirdY = game.getBird().y
+                        
+                        Log.d("GameScreen", "Pink Mode: Drag start at y=${offset.y}, bird at ${pinkInitialBirdY}")
+                    } else {
+                        // Log why we're not handling the drag
+                        Log.d("GameScreen", "Not handling drag - mode: $currentGameMode, isPlaying: ${game.isPlaying}")
+                    }
+                },
+                onDragEnd = {
+                    // End of drag
+                    if (game.getCurrentMode() == GameMode.PINK && game.isPlaying) {
+                        // Reset dragging state
+                        isPinkDragging = false
+                        Log.d("GameScreen", "Pink Mode: Drag ended")
+                    }
+                },
+                onDragCancel = {
+                    // Drag canceled
+                    if (game.getCurrentMode() == GameMode.PINK && game.isPlaying) {
+                        // Reset dragging state
+                        isPinkDragging = false
+                        Log.d("GameScreen", "Pink Mode: Drag canceled")
+                    }
+                },
+                onVerticalDrag = { change, _ ->
+                    // Add double safety check for pink mode
+                    val isPinkMode = game.getCurrentMode() == GameMode.PINK
+                    if (isPinkMode && game.isPlaying && isPinkDragging) {
+                        try {
+                            // Relative movement based on initial positions
+                            val dragDelta = change.position.y - pinkInitialTouchY
+                            
+                            // Apply the movement based on drag amount directly
+                            val bird = game.getBird()
+                            
+                            // Calculate new position based on the initial bird position plus drag delta
+                            val newY = pinkInitialBirdY + dragDelta
+                            
+                            // Feed position directly to game for bird control
+                            game.handleSlideInput(newY + bird.height/2)
+                            
+                            Log.d("GameScreen", "Pink Mode: Vertical drag delta=${dragDelta}, current Y=${bird.y}")
+                        } catch (e: Exception) {
+                            Log.e("GameScreen", "Error in vertical drag handler: ${e.message}", e)
+                        }
+                    } else if (isPinkDragging && !isPinkMode) {
+                        // We somehow got out of Pink mode while dragging
+                        isPinkDragging = false
+                        Log.d("GameScreen", "Canceling drag - no longer in Pink Mode")
                     }
                 }
             )
@@ -560,55 +746,118 @@ fun GameScreen(
                     val birdColor = if (isOrangeState) {
                         // When in orange state, use pure orange
                         ComposeColor(1f, 0.5f, 0f, 1f)
+                    } else if (game.getCurrentMode() == GameMode.PINK) {
+                        // Pink mode has its own color
+                        ComposeColor(1f, 0.4f, 0.7f, 1f)
                     } else if (isTapping && game.isPlaying) {
-                        val currentTime = System.currentTimeMillis()
-                        val currentTapDuration = currentTime - tapStartTime
+                        // Calculate the tap duration since start
+                        val pressDuration = System.currentTimeMillis() - tapStartTime
                         
-                        // Scale from 0 to 1 based on the new calculation (100-500ms)
-                        val normalizedDuration = (currentTapDuration.coerceIn(100L, 500L) - 100L) / 400f
+                        // Define cycle times - 0.3 seconds for each color
+                        val orangeTime = 300 // 0.3 seconds
+                        val pinkTime = 600   // 0.6 seconds
+                        val cycleTime = 900  // 0.9 seconds - full cycle time
                         
-                        // DON'T update bird scale during tap - color change only during charging
-                        // This prevents double scaling when entering orange mode
-                        // game.updateBirdScale(scale) - REMOVED
+                        // Use modulo to create a repeating cycle
+                        val cyclicDuration = pressDuration % cycleTime
                         
-                        // Transition from yellow to orange as tap duration increases (visual feedback only)
-                        ComposeColor(
-                                red = 1f,
-                            green = 1f - (normalizedDuration * 0.5f),  // Only reduce to 0.5 for orange
-                                blue = 0f,
-                                alpha = 1f
-                            )
-                        } else {
-                        // Reset transition flag if we're not tapping anymore
-                        isTransitioningFromOrangeState = false
-                        ComposeColor.Yellow
+                        // Log the color cycling for debugging
+                        if (frameCount % 10 == 0) {
+                            Log.d("GameScreen", "Color cycling: duration=$pressDuration, cyclic=$cyclicDuration")
                         }
                         
-                    // Draw bird as a square to match hitbox (no need for orangeSizeMultiplier here anymore)
-                    // Since we're handling the scaling in updateBirdScale
-                        drawRect(
-                            color = birdColor,
-                            topLeft = Offset(bird.x, bird.y),
-                            size = Size(bird.width, bird.height)
-                        )
-                        
-                        // Add eye for visual appeal
-                        drawCircle(
+                        // Determine color based on position in cycle
+                        when {
+                            cyclicDuration < orangeTime -> ComposeColor.Yellow  // First third: Yellow
+                            cyclicDuration < pinkTime -> ComposeColor(1f, 0.5f, 0f, 1f)  // Second third: Orange
+                            else -> ComposeColor(1f, 0.4f, 0.7f, 1f)  // Final third: Pink
+                        }
+                    } else {
+                        // Not tapping - always default to yellow in normal mode
+                        ComposeColor.Yellow
+                    }
+                    
+                    // Draw bird as a square to match hitbox
+                    drawRect(
+                        color = birdColor,
+                        topLeft = Offset(bird.x, bird.y),
+                        size = Size(bird.width, bird.height)
+                    )
+                    
+                    // Add eye for visual appeal
+                    drawCircle(
                         color = ComposeColor.Black,
-                            radius = bird.width / 6,
-                            center = Offset(bird.x + bird.width * 0.7f, bird.y + bird.height * 0.4f)
-                        )
+                        radius = bird.width / 6,
+                        center = Offset(bird.x + bird.width * 0.7f, bird.y + bird.height * 0.4f)
+                    )
+                    
+                    // Draw pink bubble effect in Pink Mode
+                    if (game.getCurrentMode() == GameMode.PINK) {
+                        val bubbleRadius = game.getPinkBubbleRadius()
+                        if (bubbleRadius > 0) {
+                            // Calculate center of bird for bubble
+                            val birdCenterX = bird.x + bird.width / 2
+                            val birdCenterY = bird.y + bird.height / 2
+                            
+                            // Draw outer bubble (semi-transparent)
+                            drawCircle(
+                                color = ComposeColor(1f, 0.4f, 0.7f, 0.3f),
+                                radius = bubbleRadius,
+                                center = Offset(birdCenterX, birdCenterY)
+                            )
+                            
+                            // Draw inner bubble (more transparent)
+                            drawCircle(
+                                color = ComposeColor(1f, 0.4f, 0.7f, 0.15f),
+                                radius = bubbleRadius * 0.8f,
+                                center = Offset(birdCenterX, birdCenterY)
+                            )
+                            
+                            // Draw shimmer effect (small sparkles)
+                            val currentTime = System.currentTimeMillis()
+                            val shimmerSeed = (currentTime / 100).toInt() // Changes every 100ms
+                            val shimmerRandom = Random(shimmerSeed)
+                            
+                            repeat(5) {
+                                val angle = shimmerRandom.nextFloat() * 2 * PI.toFloat()
+                                val distance = shimmerRandom.nextFloat() * bubbleRadius * 0.9f
+                                val sparkleX = birdCenterX + cos(angle) * distance
+                                val sparkleY = birdCenterY + sin(angle) * distance
+                                val sparkleSize = bubbleRadius * (0.05f + shimmerRandom.nextFloat() * 0.05f)
+                                
+                                drawCircle(
+                                    color = ComposeColor(1f, 0.8f, 0.9f, 0.7f),
+                                    radius = sparkleSize,
+                                    center = Offset(sparkleX, sparkleY)
+                                )
+                            }
+                            
+                            // Draw bubble timer indicator
+                            val pinkProgress = game.getPinkModeProgress()
+                            val timerArcSweepAngle = 360 * (1 - pinkProgress)
+                            
+                            drawArc(
+                                color = ComposeColor(1f, 0.4f, 0.7f, 0.5f),
+                                startAngle = -90f,
+                                sweepAngle = timerArcSweepAngle,
+                                useCenter = false,
+                                topLeft = Offset(birdCenterX - bubbleRadius, birdCenterY - bubbleRadius),
+                                size = Size(bubbleRadius * 2, bubbleRadius * 2),
+                                style = Stroke(width = 3.dp.toPx())
+                            )
+                        }
+                    }
                     
                     // Draw score and high score
                     val paint = Paint().apply {
                         color = AndroidColor.WHITE
                         textSize = 60f
-                        textAlign = Paint.Align.LEFT
+                        textAlign = Paint.Align.RIGHT
                     }
                     
                     drawContext.canvas.nativeCanvas.apply {
-                        drawText("Score: $score", 50f, 100f, paint)
-                        drawText("High Score: $highScore", 50f, 170f, paint)
+                        drawText("Score: $score", width - 50f, 100f, paint)
+                        drawText("High Score: $highScore", width - 50f, 170f, paint)
                         
                         // Draw game over text
                         if (!game.isPlaying && gameState > 0) {

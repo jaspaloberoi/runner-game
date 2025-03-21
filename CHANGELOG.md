@@ -1,6 +1,29 @@
 # Runner Game - Changelog
 
-## Version 2.1 (Current)
+## Version 2.5 (Current)
+**Feature Update: Enhanced Gameplay Balance & Mechanics**
+
+### Game Mode Improvements
+- Fixed Pink Mode activation issues to ensure consistent color changes
+- Increased speed in Orange and Pink modes to 2.0× (previously 1.5× and 1.25×)
+- Made Yellow mode jumps 1.5× higher for better maneuverability
+- Removed bird scaling across all modes for consistent gameplay
+- Bird now maintains the same size throughout all levels and modes
+
+### Obstacle System Refinements
+- Significantly reduced the frequency of moving obstacles in early levels
+- Level 1: Moving obstacles extremely rare (every 12-18 obstacles)
+- Level 2: Moving obstacles very rare (every 8-14 obstacles) 
+- Levels 3-4: Fewer moving obstacles (every 6-10 obstacles)
+- Fixed redundant obstacle movement determination system
+
+### UI and Movement Improvements
+- Moved score and high score display to the right side of the screen
+- Removed top boundary restriction - bird can now fly all the way to screen top
+- Fixed Pink Mode vertical movement to allow full screen navigation
+- Improved log messages for better debugging
+
+## Version 2.1
 **Feature Update: Orange State Power-Up**
 
 ### Orange State Power-Up
