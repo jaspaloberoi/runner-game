@@ -53,6 +53,9 @@ import android.graphics.Color as AndroidColor
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import kotlin.random.Random
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 
 // Color helper functions
 fun ComposeColor.darker(factor: Float): ComposeColor {
@@ -83,7 +86,7 @@ fun GameScreen(
         Log.d("GameScreen", "Creating GameScreen composable once")
     }
     
-    // Initialize with proper time values to prevent accidental Pink mode
+    // Initialize with proper time values to prevent accidental Green mode
     val initialTime = System.currentTimeMillis()
     
     // Create a single game instance using remember to keep it alive across recompositions
@@ -111,6 +114,17 @@ fun GameScreen(
     // Use mutableStateOf for reactive state values
     var score by remember { mutableStateOf(0) }
     var highScore by remember { mutableStateOf(0) }
+    
+    // Load initial high score from the game's SharedPreferences
+    LaunchedEffect(Unit) {
+        try {
+            highScore = game.getHighScore()
+            Log.d("GameScreen", "Successfully loaded high score from game: $highScore")
+        } catch (e: Exception) {
+            Log.e("GameScreen", "Error loading high score: ${e.message}", e)
+        }
+    }
+    
     var shakeOffset by remember { mutableStateOf(Offset(0f, 0f)) }
     var shakeDuration by remember { mutableStateOf(0) }
     var isShaking by remember { mutableStateOf(false) }
@@ -140,10 +154,10 @@ fun GameScreen(
     // This state is used to force Canvas recomposition
     var frameKey by remember { mutableStateOf(0) }
     
-    // Pink mode drag handling
-    var isPinkDragging by remember { mutableStateOf(false) }
-    var pinkInitialTouchY by remember { mutableStateOf(0f) }
-    var pinkInitialBirdY by remember { mutableStateOf(0f) }
+    // Green mode drag handling
+    var isGreenDragging by remember { mutableStateOf(false) }
+    var greenInitialTouchY by remember { mutableStateOf(0f) }
+    var greenInitialBirdY by remember { mutableStateOf(0f) }
     
     // Function to trigger screen shake
     fun startScreenShake() {
@@ -175,8 +189,6 @@ fun GameScreen(
                         isTransitioningFromOrangeState = false
                         tapDuration = 0L
                         tapStartTime = System.currentTimeMillis() // Reset tap start time
-                        // Reset bird scale when game ends
-                        game.updateBirdScale(1.0f)
                         
                         // Reset any active game modes
                         game.setNormalMode()
@@ -192,8 +204,6 @@ fun GameScreen(
                         if (orangeStateTimer >= ORANGE_STATE_DURATION) {
                             isOrangeState = false
                             orangeStateTimer = 0f
-                            // Reset bird scale when orange mode expires
-                            game.updateBirdScale(1.0f)
                             
                             // Reset game mode to normal
                             game.setNormalMode()
@@ -340,6 +350,38 @@ fun GameScreen(
         }
     }
     
+    // When app is paused or resumed, update the game accordingly
+    DisposableEffect(Unit) {
+        val lifecycleOwner = context as? LifecycleOwner
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                // Pause the game when app goes to background
+                Log.d("GameScreen", "App paused - pausing game")
+                // This ensures we reset to normal mode when paused to prevent mode getting stuck
+                if (game.isPlaying) {
+                    game.setNormalMode()
+                }
+            } else if (event == Lifecycle.Event.ON_RESUME) {
+                Log.d("GameScreen", "App resumed")
+                // Check current mode when app returns to foreground to ensure it's in the expected state
+                val currentMode = game.getCurrentMode()
+                if (currentMode != GameMode.NORMAL) {
+                    Log.w("GameScreen", "Game resumed in non-normal mode: $currentMode - resetting to normal")
+                    game.setNormalMode()
+                }
+            }
+        }
+        
+        // Register the observer
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        
+        // Cleanup when disposed
+        onDispose {
+            Log.d("GameScreen", "Disposing GameScreen resources")
+            lifecycleOwner?.lifecycle?.removeObserver(observer)
+        }
+    }
+    
     Box(modifier = Modifier
         .fillMaxSize()
         .pointerInput(Unit) {
@@ -399,7 +441,7 @@ fun GameScreen(
                             
                             // Calculate the actual cycle position at release time
                             val orangeTime = 400 // 0.4 seconds (increased from 300ms)
-                            val pinkTime = 650   // 0.65 seconds (increased slightly from 600ms)
+                            val greenTime = 650   // 0.65 seconds (increased slightly from 600ms)
                             val cycleTime = 900  // 0.9 seconds - full cycle time
                             
                             // Use modulo to determine the cyclic position
@@ -409,7 +451,7 @@ fun GameScreen(
                             if (game.getCurrentMode() == GameMode.NORMAL && !isOrangeState) {
                                 Log.d("GameScreen", "Checking mode activation - cyclic duration: $cyclicDuration")
                                 
-                                if (cyclicDuration >= orangeTime && cyclicDuration < pinkTime) {
+                                if (cyclicDuration >= orangeTime && cyclicDuration < greenTime) {
                                     // Activate Orange Mode - if we're in the orange part of the cycle
                                     Log.d("GameScreen", "🔥 ORANGE STATE ACTIVATED ON RELEASE! cyclic: $cyclicDuration")
                                     isOrangeState = true
@@ -419,18 +461,16 @@ fun GameScreen(
                                     // Activate Orange Mode in game class - this will handle scaling
                                     game.activateOrangeMode()
                                     
-                                    // Orange Mode jump with extra power
-                                    game.jump(2.0f)
-                                } else if (cyclicDuration >= pinkTime) {
-                                    // Activate Pink Mode - if we're in the pink part of the cycle
-                                    Log.d("GameScreen", "🎀 PINK MODE ACTIVATED ON RELEASE! cyclic: $cyclicDuration")
+                                    // Jump with extra power
+                                    game.jump(1.2f)
+                                } else if (cyclicDuration >= greenTime) {
+                                    // Activate Green Mode - if we're in the green part of the cycle
+                                    Log.d("GameScreen", "🌿 GREEN MODE ACTIVATED ON RELEASE! cyclic: $cyclicDuration")
                                     
-                                    // Remove scale update before mode activation - we'll let RunnerGame handle it
+                                    // Activate Green mode in game class
+                                    game.activateGreenMode()
                                     
-                                    // Explicitly activate Pink Mode in game class - this will handle scaling
-                                    game.activatePinkMode()
-                                    
-                                    // No jump in Pink Mode - handled by sliding
+                                    // No jump for Green Mode - player controls directly with touch
                                 } else {
                                     // Normal mode - Yellow part of the cycle
                                     // Basic jump with tap power proportional to tap duration
@@ -444,9 +484,9 @@ fun GameScreen(
                                     Log.d("GameScreen", "Jumping in ORANGE state")
                                     // Use higher jump multiplier for orange mode
                                     game.jump(2.0f)
-                                } else if (game.getCurrentMode() == GameMode.PINK) {
-                                    Log.d("GameScreen", "In PINK mode - not jumping")
-                                    // No jump in Pink mode - handled by vertical movement
+                                } else if (game.getCurrentMode() == GameMode.GREEN) {
+                                    Log.d("GameScreen", "In GREEN mode - not jumping")
+                                    // No jump in Green mode - handled by vertical movement
                                 } else {
                                     // Fallback - should not happen but just in case
                                     Log.d("GameScreen", "Unexpected state - defaulting to normal jump")
@@ -464,21 +504,21 @@ fun GameScreen(
             )
         }
         .pointerInput(Unit) {
-            // Handle vertical drag for Pink Mode
+            // Handle vertical drag for Green Mode
             detectVerticalDragGestures(
                 onDragStart = { offset ->
                     // Start position for vertical drag
-                    // Only handle drag in Pink Mode - add additional safety checks
+                    // Only handle drag in Green Mode - add additional safety checks
                     val currentGameMode = game.getCurrentMode()
-                    if (currentGameMode == GameMode.PINK && game.isPlaying) {
+                    if (currentGameMode == GameMode.GREEN && game.isPlaying) {
                         // Store the initial touch position for reference
-                        pinkInitialTouchY = offset.y
-                        isPinkDragging = true
+                        greenInitialTouchY = offset.y
+                        isGreenDragging = true
                         
                         // Store the bird's initial position
-                        pinkInitialBirdY = game.getBird().y
+                        greenInitialBirdY = game.getBird().y
                         
-                        Log.d("GameScreen", "Pink Mode: Drag start at y=${offset.y}, bird at ${pinkInitialBirdY}")
+                        Log.d("GameScreen", "Green Mode: Drag start at y=${offset.y}, bird at ${greenInitialBirdY}")
                     } else {
                         // Log why we're not handling the drag
                         Log.d("GameScreen", "Not handling drag - mode: $currentGameMode, isPlaying: ${game.isPlaying}")
@@ -486,45 +526,45 @@ fun GameScreen(
                 },
                 onDragEnd = {
                     // End of drag
-                    if (game.getCurrentMode() == GameMode.PINK && game.isPlaying) {
+                    if (game.getCurrentMode() == GameMode.GREEN && game.isPlaying) {
                         // Reset dragging state
-                        isPinkDragging = false
-                        Log.d("GameScreen", "Pink Mode: Drag ended")
+                        isGreenDragging = false
+                        Log.d("GameScreen", "Green Mode: Drag ended")
                     }
                 },
                 onDragCancel = {
                     // Drag canceled
-                    if (game.getCurrentMode() == GameMode.PINK && game.isPlaying) {
+                    if (game.getCurrentMode() == GameMode.GREEN && game.isPlaying) {
                         // Reset dragging state
-                        isPinkDragging = false
-                        Log.d("GameScreen", "Pink Mode: Drag canceled")
+                        isGreenDragging = false
+                        Log.d("GameScreen", "Green Mode: Drag canceled")
                     }
                 },
                 onVerticalDrag = { change, _ ->
-                    // Add double safety check for pink mode
-                    val isPinkMode = game.getCurrentMode() == GameMode.PINK
-                    if (isPinkMode && game.isPlaying && isPinkDragging) {
+                    // Add double safety check for green mode
+                    val isGreenMode = game.getCurrentMode() == GameMode.GREEN
+                    if (isGreenMode && game.isPlaying && isGreenDragging) {
                         try {
                             // Relative movement based on initial positions
-                            val dragDelta = change.position.y - pinkInitialTouchY
+                            val dragDelta = change.position.y - greenInitialTouchY
                             
                             // Apply the movement based on drag amount directly
                             val bird = game.getBird()
                             
                             // Calculate new position based on the initial bird position plus drag delta
-                            val newY = pinkInitialBirdY + dragDelta
+                            val newY = greenInitialBirdY + dragDelta
                             
                             // Feed position directly to game for bird control
                             game.handleSlideInput(newY + bird.height/2)
                             
-                            Log.d("GameScreen", "Pink Mode: Vertical drag delta=${dragDelta}, current Y=${bird.y}")
+                            Log.d("GameScreen", "Green Mode: Vertical drag delta=${dragDelta}, current Y=${bird.y}")
                         } catch (e: Exception) {
                             Log.e("GameScreen", "Error in vertical drag handler: ${e.message}", e)
                         }
-                    } else if (isPinkDragging && !isPinkMode) {
-                        // We somehow got out of Pink mode while dragging
-                        isPinkDragging = false
-                        Log.d("GameScreen", "Canceling drag - no longer in Pink Mode")
+                    } else if (isGreenDragging && !isGreenMode) {
+                        // We somehow got out of Green mode while dragging
+                        isGreenDragging = false
+                        Log.d("GameScreen", "Canceling drag - no longer in Green Mode")
                     }
                 }
             )
@@ -746,16 +786,16 @@ fun GameScreen(
                     val birdColor = if (isOrangeState) {
                         // When in orange state, use pure orange
                         ComposeColor(1f, 0.5f, 0f, 1f)
-                    } else if (game.getCurrentMode() == GameMode.PINK) {
-                        // Pink mode has its own color
-                        ComposeColor(1f, 0.4f, 0.7f, 1f)
+                    } else if (game.getCurrentMode() == GameMode.GREEN) {
+                        // Green mode has its own color
+                        ComposeColor(0.0f, 0.9f, 0.2f, 1f)
                     } else if (isTapping && game.isPlaying) {
                         // Calculate the tap duration since start
                         val pressDuration = System.currentTimeMillis() - tapStartTime
                         
                         // Define cycle times - 0.3 seconds for each color
                         val orangeTime = 300 // 0.3 seconds
-                        val pinkTime = 600   // 0.6 seconds
+                        val greenTime = 600   // 0.6 seconds
                         val cycleTime = 900  // 0.9 seconds - full cycle time
                         
                         // Use modulo to create a repeating cycle
@@ -769,8 +809,8 @@ fun GameScreen(
                         // Determine color based on position in cycle
                         when {
                             cyclicDuration < orangeTime -> ComposeColor.Yellow  // First third: Yellow
-                            cyclicDuration < pinkTime -> ComposeColor(1f, 0.5f, 0f, 1f)  // Second third: Orange
-                            else -> ComposeColor(1f, 0.4f, 0.7f, 1f)  // Final third: Pink
+                            cyclicDuration < greenTime -> ComposeColor(1f, 0.5f, 0f, 1f)  // Second third: Orange
+                            else -> ComposeColor(0.0f, 0.9f, 0.2f, 1f)  // Final third: Green
                         }
                     } else {
                         // Not tapping - always default to yellow in normal mode
@@ -780,7 +820,7 @@ fun GameScreen(
                     // Draw bird as a square to match hitbox
                     drawRect(
                         color = birdColor,
-                        topLeft = Offset(bird.x, bird.y),
+                        topLeft = Offset(bird.x + bird.visualOffsetX, bird.y),  // Apply visual offset for shake effect
                         size = Size(bird.width, bird.height)
                     )
                     
@@ -788,27 +828,27 @@ fun GameScreen(
                     drawCircle(
                         color = ComposeColor.Black,
                         radius = bird.width / 6,
-                        center = Offset(bird.x + bird.width * 0.7f, bird.y + bird.height * 0.4f)
+                        center = Offset(bird.x + bird.visualOffsetX + bird.width * 0.7f, bird.y + bird.height * 0.4f)  // Apply visual offset for shake effect
                     )
                     
-                    // Draw pink bubble effect in Pink Mode
-                    if (game.getCurrentMode() == GameMode.PINK) {
-                        val bubbleRadius = game.getPinkBubbleRadius()
+                    // Draw green bubble effect in Green Mode
+                    if (game.getCurrentMode() == GameMode.GREEN) {
+                        val bubbleRadius = game.getGreenBubbleRadius()
                         if (bubbleRadius > 0) {
                             // Calculate center of bird for bubble
-                            val birdCenterX = bird.x + bird.width / 2
+                            val birdCenterX = bird.x + bird.visualOffsetX + bird.width / 2  // Apply visual offset
                             val birdCenterY = bird.y + bird.height / 2
                             
-                            // Draw outer bubble (semi-transparent)
+                            // Draw outer bubble (more transparent)
                             drawCircle(
-                                color = ComposeColor(1f, 0.4f, 0.7f, 0.3f),
+                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.1f),  // Reduced from 0.15f to 0.1f
                                 radius = bubbleRadius,
                                 center = Offset(birdCenterX, birdCenterY)
                             )
                             
                             // Draw inner bubble (more transparent)
                             drawCircle(
-                                color = ComposeColor(1f, 0.4f, 0.7f, 0.15f),
+                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.05f),  // Reduced from 0.08f to 0.05f
                                 radius = bubbleRadius * 0.8f,
                                 center = Offset(birdCenterX, birdCenterY)
                             )
@@ -826,18 +866,18 @@ fun GameScreen(
                                 val sparkleSize = bubbleRadius * (0.05f + shimmerRandom.nextFloat() * 0.05f)
                                 
                                 drawCircle(
-                                    color = ComposeColor(1f, 0.8f, 0.9f, 0.7f),
+                                    color = ComposeColor(0.5f, 1.0f, 0.5f, 0.3f),  // Reduced from 0.4f to 0.3f
                                     radius = sparkleSize,
                                     center = Offset(sparkleX, sparkleY)
                                 )
                             }
                             
                             // Draw bubble timer indicator
-                            val pinkProgress = game.getPinkModeProgress()
-                            val timerArcSweepAngle = 360 * (1 - pinkProgress)
+                            val greenProgress = game.getGreenModeProgress()
+                            val timerArcSweepAngle = 360 * (1 - greenProgress)
                             
                             drawArc(
-                                color = ComposeColor(1f, 0.4f, 0.7f, 0.5f),
+                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.2f),  // Reduced from 0.3f to 0.2f
                                 startAngle = -90f,
                                 sweepAngle = timerArcSweepAngle,
                                 useCenter = false,

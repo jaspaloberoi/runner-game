@@ -35,9 +35,9 @@ enum class SoundEffectType {
 
 // Game modes
 enum class GameMode {
-    NORMAL,    // Yellow
-    ORANGE,    // Orange mode (already implemented)
-    PINK       // Pink bubble mode
+    NORMAL,    // Yellow mode
+    ORANGE,    // Orange power mode
+    GREEN      // Green bubble mode (was PINK)
 }
 
 enum class TextureType {
@@ -128,8 +128,8 @@ class RunnerGame(
     
     // Mode tracking - explicitly initialize to NORMAL
     private var currentMode = GameMode.NORMAL
-    private var pinkModeTimer = 0f
-    private val pinkModeDuration = 5000f // 5 seconds in milliseconds
+    private var greenModeTimer = 0f
+    private val greenModeDuration = 5000f // 5 seconds in milliseconds
     
     // Speed multiplier
     private var speedMultiplier = 1.0f
@@ -139,12 +139,24 @@ class RunnerGame(
     private var shakeDuration = 0
     private var shakeIntensity = 5f
     
+    // Add method to trigger bird shake
+    private var isBirdShaking = false
+    private var birdShakeStartTime = 0L
+    private var birdShakeOffsetX = 0f
+    
+    // Add this as a class member with the other shake variables
+    private var shakeRemainingDuration = 300 // Default 300ms
+    
+    // Add a flag to delay gravity and speed changes until after shake completes
+    private var isTransitioningToNormal = false
+    private var transitionStartTime = 0L
+    
     init {
         Log.d("RunnerGame", "Initializing game")
         // Force normal mode in constructor with multiple safeguards
         currentMode = GameMode.NORMAL
         speedMultiplier = 1.0f
-        pinkModeTimer = 0f  // Reset pink mode timer to ensure it's not active
+        greenModeTimer = 0f  // Reset green mode timer to ensure it's not active
         
         // Set initial state timestamps to prevent accidental mode activation
         lastUpdateTime = System.currentTimeMillis()
@@ -173,7 +185,7 @@ class RunnerGame(
         
         // Reset mode before anything else to ensure proper initialization
         setMode(GameMode.NORMAL, "initialize")
-        pinkModeTimer = 0f
+        greenModeTimer = 0f
         speedMultiplier = 1.0f
         
         // Clear any existing state
@@ -210,7 +222,7 @@ class RunnerGame(
         lastUpdateTime = System.currentTimeMillis()
         lastObstacleTime = System.currentTimeMillis()
         
-        // Create initial bird
+        // Create initial bird with fixed size
         val birdSize = screenWidth * 0.05f
         val jumpVel = screenHeight * 0.15f  // Increased base jump velocity for more noticeable effect
         bird = Bird(
@@ -218,8 +230,8 @@ class RunnerGame(
             y = screenHeight * 0.4f,
             width = birdSize,
             height = birdSize,
-            jumpVelocity = jumpVel,
-            levelSizeFactor = 1.0f  // Explicit level size factor
+            velocityY = jumpVel,
+            jumpVelocity = jumpVel
         )
         
         // Add initial obstacle, ensuring it's completely off-screen
@@ -234,11 +246,10 @@ class RunnerGame(
             Log.w("RunnerGame", "WARNING: Mode is not NORMAL after initialization, forcing it again!")
             setMode(GameMode.NORMAL, "initialize-final-check")
             speedMultiplier = 1.0f
-            updateBirdScale(1.0f)
         }
         
         Log.d("RunnerGame", "Game initialized with properties: gravity=$gravity, gameSpeed=$gameSpeed, obstacleBaseWidth=$obstacleBaseWidth")
-        Log.d("RunnerGame", "Game initialized in mode: $currentMode")
+        Log.d("RunnerGame", "Game initialized in mode: $currentMode, bird size: ${bird?.width}x${bird?.height}")
     }
 
     private fun stopAllSounds() {
@@ -324,7 +335,33 @@ class RunnerGame(
     // Main update function
     private fun updateGame() {
         val currentTime = System.currentTimeMillis()
-        val deltaTime = (currentTime - lastUpdateTime) / 1000f
+        
+        // Handle bird shaking if active
+        if (isBirdShaking) {
+            val elapsed = currentTime - birdShakeStartTime
+            if (elapsed < shakeRemainingDuration) { // Use configured duration
+                // Generate random offset between -intensity and +intensity
+                birdShakeOffsetX = (Random.nextFloat() * 2 * shakeIntensity) - shakeIntensity
+                
+                // Only log every 50ms to avoid spam
+                if (elapsed % 50 < 16) {
+                    Log.d("RunnerGame", "Bird shaking - offset: $birdShakeOffsetX, time: $elapsed, mode: $currentMode, intensity: $shakeIntensity")
+                }
+            } else {
+                // Stop shaking
+                isBirdShaking = false
+                birdShakeOffsetX = 0f
+                Log.d("RunnerGame", "Bird shake completed - duration exceeded $shakeRemainingDuration ms")
+                
+                // If we were transitioning to normal mode, complete the transition now
+                if (isTransitioningToNormal) {
+                    completeTransitionToNormal()
+                }
+            }
+        }
+        
+        // Calculate time passed since last update
+        val deltaTime = (currentTime - lastUpdateTime) / 1000f // in seconds
         lastUpdateTime = currentTime
         
         // Use speed multiplier from current mode
@@ -340,7 +377,8 @@ class RunnerGame(
             frameCount++
         }
         
-        if (currentMode != GameMode.PINK) { // In Pink Mode, bird position is controlled directly by slide
+        // Skip applying gravity if we're in Green Mode or during mode transition shake
+        if (currentMode != GameMode.GREEN && !(isTransitioningToNormal && isBirdShaking)) {
             // Apply gravity
             bird?.let { b ->
                 b.velocityY += gravity * deltaTime
@@ -428,12 +466,26 @@ class RunnerGame(
         // Update score
         updateScore()
         
-        // Update pink mode timer
-        if (currentMode == GameMode.PINK) {
-            pinkModeTimer += deltaTime * 1000 // Convert to milliseconds
-            if (pinkModeTimer >= pinkModeDuration) {
+        // Update green mode timer
+        if (currentMode == GameMode.GREEN) {
+            greenModeTimer += deltaTime * 1000 // Convert to milliseconds
+            if (greenModeTimer >= greenModeDuration) {
                 setNormalMode()
             }
+        }
+        
+        // Add shake offset to bird position if shaking
+        if (isBirdShaking && bird != null) {
+            // Only modify X temporarily for visual effect - original X is used for hit detection
+            bird?.visualOffsetX = birdShakeOffsetX
+            
+            // Log position with shake applied every 10 frames
+            if (frameCount % 10 == 0) {
+                val b = bird!! // Safe since we checked bird != null
+                Log.d("RunnerGame", "Bird with shake - position: ${b.x + b.visualOffsetX}, visualOffsetX: ${b.visualOffsetX}")
+            }
+        } else {
+            bird?.visualOffsetX = 0f
         }
     }
     
@@ -449,7 +501,7 @@ class RunnerGame(
     private fun checkCollisions() {
         bird?.let { b ->
             // Check if bird hits the ground
-            if (b.y + b.height >= screenHeight * 0.9f && currentMode != GameMode.PINK) {
+            if (b.y + b.height >= screenHeight * 0.9f && currentMode != GameMode.GREEN) {
                 Log.d("RunnerGame", "Ground collision detected")
                 isPlaying = false
                 saveHighScore(score)
@@ -509,33 +561,14 @@ class RunnerGame(
                 
                 // Increase score
                 score++
-                soundManager.playScoreSound()
                 
                 // Level up every 10 obstacles
                 if (obstaclesPassed % 10 == 0) {
                     level++
                     
-                    // Remove level-based bird size scaling
-                    // bird?.let { b ->
-                    //     // Increase by 5% per level with a cap of 1.5x
-                    //     b.levelSizeFactor = min(b.levelSizeFactor * 1.05f, 1.5f)
-                    //     
-                    //     // Apply proper mode scaling factors based on current mode
-                    //     val modeScaleFactor = when (currentMode) {
-                    //         GameMode.NORMAL -> 1.0f
-                    //         GameMode.ORANGE -> 1.2f
-                    //         GameMode.PINK -> 1.3f
-                    //     }
-                    //     updateBirdScale(modeScaleFactor)
-                    // }
+                    // No need to adjust bird size since we're keeping it fixed
                     
-                    // Keep bird size consistent regardless of level
-                    bird?.let { b ->
-                        // Reset level size factor to ensure no scaling
-                        b.levelSizeFactor = 1.0f
-                    }
-                    
-                    // Play level up sound
+                    // Only play score sound at level up, not for every obstacle
                     soundManager.playScoreSound()
                     levelSoundStartTime = System.currentTimeMillis()
                     isPlayingLevelSound = true
@@ -559,7 +592,7 @@ class RunnerGame(
     
     // Jump with configurable power
     fun jump(powerMultiplier: Float = 1.0f) {
-        if (isPlaying && currentMode != GameMode.PINK) {
+        if (isPlaying && currentMode != GameMode.GREEN) {
             // Increase jump power based on multiplier - making sure longer taps jump further
             // Apply appropriate multiplier based on mode
             val effectivePower = when (currentMode) {
@@ -616,9 +649,9 @@ class RunnerGame(
         // 4. First reset game mode and related parameters
         setMode(GameMode.NORMAL, "reset")  // Force to normal mode
         speedMultiplier = 1.0f
-        pinkModeTimer = 0f             // Ensure pink mode timer is reset
+        greenModeTimer = 0f             // Ensure green mode timer is reset
         
-        // 5. Create fresh bird at the initial position with initial size
+        // 5. Create fresh bird at the initial position with fixed size
         val birdSize = screenWidth * 0.05f
         val jumpVel = screenHeight * 0.15f
         bird = Bird(
@@ -626,21 +659,17 @@ class RunnerGame(
             y = screenHeight * 0.4f,
             width = birdSize,
             height = birdSize,
-            jumpVelocity = jumpVel,
-            levelSizeFactor = 1.0f  // Explicitly set to 1.0f for proper reset
+            velocityY = jumpVel,
+            jumpVelocity = jumpVel
         )
         
         // 6. Ensure bird is properly configured
         bird?.let { b ->
             b.velocityY = 0f
-            b.levelSizeFactor = 1.0f  // Double check reset of level size factor
         }
         
         // 7. Call the mode setter to ensure proper state
         setNormalMode()
-        
-        // 8. Explicitly set bird scale
-        updateBirdScale(1.0f)
         
         // 9. Add initial obstacle off-screen
         val initialObstacle = createObstacle(false)  // Explicitly non-moving for first obstacle
@@ -652,7 +681,6 @@ class RunnerGame(
             // Force it one more time
             setMode(GameMode.NORMAL, "reset-final-check")
             speedMultiplier = 1.0f
-            updateBirdScale(1.0f)
         }
         
         Log.d("RunnerGame", "Game reset complete - bird size: ${bird?.width}x${bird?.height}, mode: $currentMode, multiplier: $speedMultiplier")
@@ -673,13 +701,10 @@ class RunnerGame(
                 lastUpdateTime = System.currentTimeMillis()
                 setMode(GameMode.NORMAL, "start")
                 speedMultiplier = 1.0f
-                pinkModeTimer = 0f
+                greenModeTimer = 0f
                 
                 // Explicitly call the normal mode setter to ensure proper state
                 setNormalMode()
-                
-                // Force the bird scale to be correct
-                updateBirdScale(1.0f)
                 
                 isPlaying = true
                 Log.d("RunnerGame", "Game started in mode: $currentMode")
@@ -708,61 +733,78 @@ class RunnerGame(
     // Handle mode-switching logic
     fun activateOrangeMode() {
         if (!initialized || !isPlaying) return
-        if (currentMode == GameMode.PINK) return // Don't downgrade from PINK to ORANGE
+        if (currentMode == GameMode.GREEN) return // Don't downgrade from GREEN to ORANGE
         
         Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.ORANGE} (from: activateOrangeMode)")
         currentMode = GameMode.ORANGE
         
-        // Update orange mode speed multiplier to 2.0x
+        // Update orange mode speed multiplier back to 2.0x as originally set
         speedMultiplier = 2.0f
         
-        // Bird scaling already removed as requested
-        
-        Log.d("RunnerGame", "🟠 Orange Mode activated! Speed multiplier: $speedMultiplier")
+        Log.d("RunnerGame", "🔥 Orange Mode activated! Speed multiplier: $speedMultiplier")
+        // No sound for mode changes
     }
     
-    fun activatePinkMode() {
+    fun activateGreenMode() {
         if (!initialized || !isPlaying) return
         
-        Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.PINK} (from: activatePinkMode)")
-        currentMode = GameMode.PINK
+        Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.GREEN} (from: activateGreenMode)")
+        currentMode = GameMode.GREEN
         
-        // Update pink mode speed multiplier to 2.0x
-        speedMultiplier = 2.0f
+        // Update green mode speed multiplier to 3.0x
+        speedMultiplier = 3.0f
         
-        // Bird scaling already removed as requested
-        
-        Log.d("RunnerGame", "🎀 Pink Mode activated! Speed multiplier: $speedMultiplier")
+        Log.d("RunnerGame", "🌿 Green Mode activated! Speed multiplier: $speedMultiplier")
+        // No sound for mode changes
     }
     
     fun setNormalMode() {
         val previousMode = currentMode
         
-        setMode(GameMode.NORMAL, "setNormalMode")
-        // Reset speed to normal
-        speedMultiplier = 1.0f
-        
-        // Explicitly reset bird scale to the base size (scale factor 1.0)
-        updateBirdScale(1.0f)
-        
-        if (previousMode == GameMode.PINK) {
-            // Play sound when exiting Pink Mode
-            try {
-                soundManager.playDoubleBeepSound()
-            } catch (e: Exception) {
-                Log.e("RunnerGame", "Error playing Pink Mode deactivation sound: ${e.message}", e)
+        if (previousMode != GameMode.NORMAL && isPlaying) {
+            // Mark that we're transitioning to normal mode
+            isTransitioningToNormal = true
+            transitionStartTime = System.currentTimeMillis()
+            
+            // Set the game mode to NORMAL in tracking, but don't change gameplay physics yet
+            setMode(GameMode.NORMAL, "setNormalMode")
+            
+            // Trigger bird shake first before applying gameplay changes
+            Log.d("RunnerGame", "Triggering bird shake - previousMode: $previousMode, isPlaying: $isPlaying")
+            triggerBirdShake()
+            
+            if (previousMode == GameMode.GREEN) {
+                // Play sound when exiting Green Mode
+                try {
+                    soundManager.playDoubleBeepSound()
+                } catch (e: Exception) {
+                    Log.e("RunnerGame", "Error playing Green Mode deactivation sound: ${e.message}", e)
+                }
+                Log.d("RunnerGame", "Green Mode deactivated. Back to Normal Mode.")
+            } else if (previousMode == GameMode.ORANGE) {
+                Log.d("RunnerGame", "Orange Mode deactivated. Back to Normal Mode.")
             }
-            Log.d("RunnerGame", "Pink Mode deactivated. Back to Normal Mode.")
-        } else if (previousMode == GameMode.ORANGE) {
-            Log.d("RunnerGame", "Orange Mode deactivated. Back to Normal Mode.")
         } else {
-            Log.d("RunnerGame", "Normal Mode activated. Speed multiplier: $speedMultiplier")
+            // Direct mode change if not transitioning from a special mode or not playing
+            setMode(GameMode.NORMAL, "setNormalMode")
+            speedMultiplier = 1.0f
+            Log.d("RunnerGame", "Normal Mode activated directly. Speed multiplier: $speedMultiplier")
         }
     }
 
-    // Handle vertical slide input for Pink Mode
+    // New method to complete transition after shake is done
+    private fun completeTransitionToNormal() {
+        isTransitioningToNormal = false
+        
+        // Now apply the speed change after shake is complete
+        speedMultiplier = 1.0f
+        
+        Log.d("RunnerGame", "Transition to Normal Mode completed - gravity and speed now set")
+    }
+
+    // Handle vertical slide input for Green Mode
     fun handleSlideInput(y: Float) {
-        if (currentMode == GameMode.PINK && isPlaying) {
+        if (currentMode == GameMode.GREEN && isPlaying) {
             try {
                 // Get bird's current position
                 bird?.let { b ->
@@ -776,7 +818,7 @@ class RunnerGame(
                     // Directly set position with bounds checking
                     b.y = targetY.coerceIn(topLimit, bottomLimit)
                     
-                    Log.d("RunnerGame", "Pink Mode slide: Bird position set to y=${b.y}")
+                    Log.d("RunnerGame", "Green Mode slide: Bird position set to y=${b.y}")
                 }
             } catch (e: Exception) {
                 Log.e("RunnerGame", "Error in handleSlideInput: ${e.message}", e)
@@ -787,29 +829,14 @@ class RunnerGame(
     // Getter for the mode
     fun getCurrentMode(): GameMode = currentMode
     
-    // Get pink mode progress (0.0f to 1.0f)
-    fun getPinkModeProgress(): Float = if (currentMode == GameMode.PINK) {
-        pinkModeTimer / pinkModeDuration 
+    // Get green mode progress (0.0f to 1.0f)
+    fun getGreenModeProgress(): Float = if (currentMode == GameMode.GREEN) {
+        greenModeTimer / greenModeDuration 
     } else 0f
     
-    // Update bird scale based on mode and level
-    fun updateBirdScale(modeScaleFactor: Float) {
-        bird?.let { b ->
-            // Base size is proportional to screen width
-            val baseSize = screenWidth * 0.05f
-            val levelScaleFactor = b.levelSizeFactor
-            val combinedFactor = modeScaleFactor * levelScaleFactor
-            
-            // Calculate based on base size
-            b.width = baseSize * combinedFactor
-            b.height = baseSize * combinedFactor
-            Log.d("RunnerGame", "Bird scale updated - width: ${b.width}, height: ${b.height}, factors: mode=$modeScaleFactor, level=$levelScaleFactor")
-        }
-    }
-
-    // Get the visual bubble radius for Pink Mode - used for rendering
-    fun getPinkBubbleRadius(): Float {
-        return if (currentMode == GameMode.PINK && bird != null) {
+    // Get the visual bubble radius for Green Mode - used for rendering
+    fun getGreenBubbleRadius(): Float {
+        return if (currentMode == GameMode.GREEN && bird != null) {
             // Bubble is 40% larger than bird's width
             bird!!.width * 1.4f
         } else {
@@ -848,25 +875,35 @@ class RunnerGame(
             Log.d("RunnerGame", "🔄 Mode change: $oldMode → $newMode (from: $source)")
         }
     }
+
+    // Then modify the triggerBirdShake method to be consistent
+    fun triggerBirdShake() {
+        Log.d("RunnerGame", "Bird shake triggered - setting isBirdShaking to true")
+        isBirdShaking = true
+        birdShakeStartTime = System.currentTimeMillis()
+        // Use consistent shake parameters for all modes
+        shakeIntensity = 5f
+        shakeRemainingDuration = 300
+        Log.d("RunnerGame", "Bird shake triggered - will shake for ${shakeRemainingDuration}ms with intensity $shakeIntensity")
+    }
 }
 
+// Bird class with added visualOffsetX property but no scaling
 class Bird(
     var x: Float,
     var y: Float,
     var width: Float,
     var height: Float,
-    var velocity: Float = 0f,
     var velocityY: Float = 0f,
-    val jumpVelocity: Float,
-    var levelSizeFactor: Float = 1.0f
+    var jumpVelocity: Float = 600f
 ) {
+    var visualOffsetX = 0f      // Added for shake effect
+    
     fun jump() {
-        velocity = -jumpVelocity
-        velocityY = velocity
+        velocityY = -jumpVelocity
     }
     
     fun jump(powerMultiplier: Float) {
-        velocity = -jumpVelocity * powerMultiplier
-        velocityY = velocity
+        velocityY = -jumpVelocity * powerMultiplier
     }
 } 

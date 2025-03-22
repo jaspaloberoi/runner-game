@@ -1,6 +1,29 @@
 # Runner Game - Changelog
 
-## Version 2.5 (Current)
+## Version 3.0 (Current)
+**Stable Release: Mode Refinements & Performance Improvements**
+
+### Game Mode Enhancements
+- Renamed Pink Mode to Green Mode with completely new visual appearance
+- Increased Green Mode speed to 3.0× for more dramatic gameplay differences
+- Ensured Green Mode bubble is semi-transparent for better visibility
+- Optimized Green Mode drag handling for smoother control
+- Fixed mode transition animations and effects
+- Fixed Yellow mode jump functionality in all gameplay scenarios
+
+### Visual and Animation Improvements
+- Implemented bird shake effect when transitioning back to Yellow mode
+- Shake occurs before gravity or speed changes for smoother visual effect
+- Completely removed bird scaling in all modes for consistent gameplay feel
+- Ensured bird maintains fixed size throughout all levels and mode transitions
+
+### Sound System Polishing
+- Fixed score sound looping issue
+- Limited score sound to 2 seconds duration
+- Ensured score sound only plays during level changes
+- Fixed sound behavior during mode transitions
+
+## Version 2.5
 **Feature Update: Enhanced Gameplay Balance & Mechanics**
 
 ### Game Mode Improvements

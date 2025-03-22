@@ -40,8 +40,8 @@ class SoundManager(private val context: Context) {
         scoreSound = MediaPlayer.create(context, R.raw.score)
         collisionSound = MediaPlayer.create(context, R.raw.collision)
         
-        // Set score sound to loop
-        scoreSound?.isLooping = true
+        // Make sure score sound doesn't loop
+        scoreSound?.isLooping = false
     }
 
     fun playJumpSound() {
@@ -68,7 +68,33 @@ class SoundManager(private val context: Context) {
 
     fun playScoreSound() {
         try {
-            scoreSound?.start()
+            scoreSound?.let { player ->
+                // Stop any currently playing score sound first
+                if (player.isPlaying) {
+                    player.pause()
+                }
+                
+                // Disable looping - we don't want continuous playback
+                player.isLooping = false
+                
+                // Reset position and play once
+                player.seekTo(0)
+                player.start()
+                
+                // Set a timer to stop the sound after 2 seconds
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        // Check if still playing and stop it
+                        if (player.isPlaying) {
+                            player.pause()
+                            player.seekTo(0)
+                            Log.d("SoundManager", "Score sound stopped after 2 seconds")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SoundManager", "Error stopping score sound after timeout: ${e.message}")
+                    }
+                }, 2000) // 2 seconds
+            }
         } catch (e: Exception) {
             Log.e("SoundManager", "Error playing score sound: ${e.message}")
         }
