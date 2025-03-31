@@ -1,7 +1,7 @@
 package com.example.test.game
 
 /**
- * Runner Game - Version 2.5
+ * Runner Game - Version 3.1
  * 
  * Features:
  * - Smooth scrolling with key-based Canvas recomposition
@@ -16,6 +16,8 @@ package com.example.test.game
  * - Faster falling speed (1.5x) for more challenging gameplay
  * - Visual tap duration indicator
  * - Bug fixes for color transitions and state management
+ * - Level cycling from 1-4 with themed backgrounds
+ * - Improved mode activation logic
  */
 
 import android.util.Log
@@ -159,6 +161,147 @@ fun GameScreen(
     var greenInitialTouchY by remember { mutableStateOf(0f) }
     var greenInitialBirdY by remember { mutableStateOf(0f) }
     
+    // Weather effect parameters
+    var clouds = remember { mutableStateListOf<Triple<Offset, Float, Float>>() } // Position, size, opacity
+    var raindrops = remember { mutableStateListOf<Pair<Offset, Float>>() } // Position and size
+    var stars = remember { mutableStateListOf<Triple<Offset, Float, Float>>() } // Position, size, twinkle factor
+    var sunRays = remember { mutableStateListOf<Triple<Float, Float, Float>>() } // Angle, length, opacity
+    
+    // Weather theme initialization
+    LaunchedEffect(Unit) {
+        // Initialize clouds for level 1 with better distribution
+        for (i in 0 until 10) {
+            // Distribute clouds across different heights in the sky
+            val x = (Math.random() * 1000).toFloat()
+            // Calculate height distribution (0% to 80% of screen height)
+            val y = (50 + Math.random() * 400).toFloat() // More distributed vertically
+            // Make clouds bigger and more consistent
+            val size = (60f + Math.random() * 30f).toFloat() // Increased base size from 30f to 60f
+            val opacity = (0.7f + Math.random() * 0.3f).toFloat() // Higher minimum opacity
+            clouds.add(Triple(Offset(x, y), size, opacity))
+        }
+        
+        // Initialize sun rays for level 2 (sunset)
+        for (i in 0 until 20) {
+            val angle = (i * (360 / 20)).toFloat() // Evenly spaced rays
+            val length = (80f + Math.random() * 50f).toFloat()
+            val opacity = (0.4f + Math.random() * 0.5f).toFloat()
+            sunRays.add(Triple(angle, length, opacity))
+        }
+        
+        // Initialize stars for level 4 (night sky) - distribute throughout the entire sky
+        for (i in 0 until 150) {
+            val x = (Math.random() * 1000).toFloat()
+            // Make sure stars cover the ENTIRE sky height - using 90% of screen height
+            val y = (Math.random() * 600).toFloat() // Will be adjusted once we know actual canvas size
+            val size = (1f + Math.random() * 3f).toFloat()
+            val twinkleFactor = Math.random().toFloat() // Used for twinkling effect
+            stars.add(Triple(Offset(x, y), size, twinkleFactor))
+        }
+    }
+    
+    // Update weather effects
+    LaunchedEffect(Unit) {
+        while (true) {
+            val level = game.getLevel()
+            val canvasWidth = canvasSize.width
+            val canvasHeight = canvasSize.height
+            
+            // Level 1: Moving clouds in clear sky
+            if (level == 1) {
+                val updatedClouds = mutableListOf<Triple<Offset, Float, Float>>()
+                
+                clouds.forEach { cloud ->
+                    val (pos, size, opacity) = cloud
+                    val newX = (pos.x + 0.3f) % (canvasWidth + 200) // Slow cloud movement
+                    if (newX > canvasWidth) {
+                        // Cloud moved off-screen, reposition to left side
+                        updatedClouds.add(Triple(Offset(-100f, pos.y), size, opacity))
+                    } else {
+                        updatedClouds.add(Triple(Offset(newX, pos.y), size, opacity))
+                    }
+                }
+                
+                clouds.clear()
+                clouds.addAll(updatedClouds)
+            }
+            
+            // Level 3: Rain with dark clouds
+            if (level == 3) {
+                // Add new raindrops
+                if (raindrops.size < 200) {
+                    val x = (Math.random() * canvasWidth).toFloat()
+                    val y = (Math.random() * 50).toFloat() // Start at top
+                    val size = (10f + Math.random() * 20f).toFloat()
+                    raindrops.add(Pair(Offset(x, y), size))
+                }
+                
+                // Update existing raindrops
+                val toRemove = mutableListOf<Pair<Offset, Float>>()
+                val updated = mutableListOf<Pair<Offset, Float>>()
+                
+                // Calculate the ground position - raindrops should stop there
+                val groundY = canvasHeight - canvasHeight * 0.1f // Ground height is 10% of canvas height
+                
+                raindrops.forEach { drop ->
+                    val (pos, size) = drop
+                    val newY = pos.y + 12f // Rain speed
+                    
+                    // Check if the raindrop would hit the ground
+                    if (newY > groundY) {
+                        // Remove the raindrop when it hits the ground
+                        toRemove.add(drop)
+                    } else {
+                        updated.add(Pair(Offset(pos.x, newY), size))
+                    }
+                }
+                
+                raindrops.removeAll(toRemove)
+                raindrops.clear()
+                raindrops.addAll(updated)
+            }
+            
+            // Level 4: Twinkling stars in night sky
+            if (level == 4) {
+                val updatedStars = mutableListOf<Triple<Offset, Float, Float>>()
+                
+                // If stars list is empty or has less than 150 stars, reinitialize stars across the entire sky
+                if (stars.isEmpty() || stars.size < 150 || canvasHeight > 0 && stars[0].first.y > canvasHeight * 0.5f) {
+                    stars.clear()
+                    for (i in 0 until 150) {
+                        val x = (Math.random() * canvasWidth).toFloat()
+                        // Distribute stars across the ENTIRE sky (0% to 90% of screen height)
+                        val y = (Math.random() * canvasHeight * 0.9f).toFloat()
+                        val size = (1f + Math.random() * 3f).toFloat()
+                        val twinkleFactor = Math.random().toFloat()
+                        stars.add(Triple(Offset(x, y), size, twinkleFactor))
+                    }
+                    Log.d("GameScreen", "Reinitialized stars across entire sky height: ${canvasHeight}")
+                }
+                
+                stars.forEach { star ->
+                    val (pos, size, twinkleFactor) = star
+                    
+                    // Create twinkling effect by varying the twinkle factor
+                    val newTwinkleFactor = if (Math.random() < 0.05) {
+                        // 5% chance to change twinkling state each frame
+                        (Math.random()).toFloat()
+                    } else {
+                        twinkleFactor
+                    }
+                    
+                    updatedStars.add(Triple(pos, size, newTwinkleFactor))
+                }
+                
+                stars.clear()
+                stars.addAll(updatedStars)
+            }
+            
+            // Short delay before next update
+            delay(16) // ~60fps
+        }
+    }
+    
     // Function to trigger screen shake
     fun startScreenShake() {
         isShaking = true
@@ -170,15 +313,26 @@ fun GameScreen(
         while (true) {
             try {
                 val currentTime = System.nanoTime()
-                val deltaTime = (currentTime - lastFrameTime) / 1_000_000_000f
+                val deltaTimeSeconds = (currentTime - lastFrameTime) / 1_000_000_000f
                 lastFrameTime = currentTime
                 
                 if (isInitialized) {
-                    Log.d("GameScreen", "Game loop - isPlaying: ${game.isPlaying}")
+                    // Log status consistently at regular intervals
+                    if (frameCount % 60 == 0) {
+                        Log.d("GameScreen", "Game loop - isPlaying: ${game.isPlaying}, gameState: $gameState, frame: $frameCount")
+                        val bird = game.getBird()
+                        Log.d("GameScreen", "Bird position: (${bird.x}, ${bird.y}), velocity: ${bird.velocityY}")
+                        Log.d("GameScreen", "Obstacles count: ${game.getObstacles().size}")
+                    }
                     
                     // Check if game was playing but is now stopped (collision)
                     val wasPlaying = game.isPlaying
-                    game.update()
+                    
+                    // Only update the game if it's in "playing" state (gameState = 1)
+                    if (gameState == 1) {
+                        game.update() // Ensure this gets called every frame to update game state
+                    }
+                    
                     if (wasPlaying && !game.isPlaying) {
                         startScreenShake()
                         // Reset tapping state when game ends
@@ -197,10 +351,12 @@ fun GameScreen(
                         Log.d("GameScreen", "Collision detected and handled - game stopped")
                     }
                     
-                    // Update orange state timer (moved outside of tapping check to ensure it expires correctly)
+                    // Update orange state timer
                     if (isOrangeState) {
-                        orangeStateTimer += deltaTime * 1000f // Convert to milliseconds since ORANGE_STATE_DURATION is in ms
-                        Log.d("GameScreen", "🔸 Orange state timer: $orangeStateTimer, max duration: $ORANGE_STATE_DURATION")
+                        orangeStateTimer += deltaTimeSeconds * 1000f // Convert to milliseconds since ORANGE_STATE_DURATION is in ms
+                        if (frameCount % 30 == 0) {
+                            Log.d("GameScreen", "Orange state timer: $orangeStateTimer, max duration: $ORANGE_STATE_DURATION")
+                        }
                         if (orangeStateTimer >= ORANGE_STATE_DURATION) {
                             isOrangeState = false
                             orangeStateTimer = 0f
@@ -218,7 +374,7 @@ fun GameScreen(
                                 isTransitioningFromOrangeState = false
                             }
                             
-                            Log.d("GameScreen", "🔶 Orange state EXPIRED")
+                            Log.d("GameScreen", "Orange state EXPIRED")
                         }
                     }
                     
@@ -227,29 +383,28 @@ fun GameScreen(
                         if (isTapping) {
                             // Only update tap duration if actually tapping
                             tapDuration = System.currentTimeMillis() - tapStartTime
-                            Log.d("GameScreen", "Tap time: $tapDuration")
+                            if (frameCount % 30 == 0) {
+                                Log.d("GameScreen", "Tap time: $tapDuration")
+                            }
                         } else {
                             // If not tapping, ensure that tapDuration is zero
-                            // No mode activation here - moved to tap release handler
                             tapDuration = 0L
                         }
                     }
                     
-                    // Update trail positions and add new ones when in orange state
+                    // Update trail positions when in orange state
                     if (isOrangeState && game.isPlaying) {
                         val birdObj = game.getBird()
                         
-                        // Add new position to the trail - position it exactly at the back center of the bird
-                        // This is our pivot point for the trail
+                        // Add new position to the trail
                         val backOfBird = Offset(
-                            birdObj.x,  // Back edge of the bird (left side)
-                            birdObj.y + birdObj.height / 2  // Vertical center
+                            birdObj.x,
+                            birdObj.y + birdObj.height / 2
                         )
                         
-                        // Add new position to the trail
                         trailPositions.add(backOfBird)
                         
-                        // Limit trail length - longer for a better plume effect
+                        // Limit trail length
                         while (trailPositions.size > 30) {
                             trailPositions.removeAt(0)
                         }
@@ -259,14 +414,6 @@ fun GameScreen(
                     } else if (trailPositions.isNotEmpty()) {
                         // Clear trail when not in orange state
                         trailPositions.clear()
-                    }
-                    
-                    // Update game state
-                    if (gameState == 0) {
-                        if (isTapping) {
-                            gameState = 1
-                            game.start()
-                        }
                     }
                     
                     // Update score
@@ -300,9 +447,6 @@ fun GameScreen(
                 }
                 
                 frameCount++
-                if (frameCount % 60 == 0) {
-                    Log.d("GameScreen", "FPS: ${1f / deltaTime}")
-                }
             } catch (e: Exception) {
                 Log.e("GameScreen", "Error in game loop: ${e.message}", e)
                 delay(16)
@@ -310,7 +454,7 @@ fun GameScreen(
         }
     }
     
-    // Separate effect to handle initialization
+    // Modified initialization process to ensure the game starts correctly
     LaunchedEffect(canvasSize) {
         if (!isInitialized && canvasSize.width > 0 && canvasSize.height > 0) {
             try {
@@ -343,7 +487,9 @@ fun GameScreen(
                 }
                 
                 isInitialized = true
-                Log.d("GameScreen", "Game initialized in NORMAL mode, current mode: ${game.getCurrentMode()}, tapDuration: $tapDuration")
+                gameState = 0 // Set to waiting for tap
+                Log.d("GameScreen", "Game initialized in NORMAL mode, current mode: ${game.getCurrentMode()}, waiting for tap to start")
+                
             } catch (e: Exception) {
                 Log.e("GameScreen", "Error initializing game: ${e.message}", e)
             }
@@ -404,15 +550,16 @@ fun GameScreen(
                                 tapDuration = 0L
                                 
                                 // Reset game state 
-                                gameState = 0
+                                gameState = 1  // Set to 1 to start the game immediately
                                 
                                 // Force the game to normal mode
                                 game.setNormalMode()
                                 
-                                // This will start a fresh game
+                                // Start the game immediately
                                 isTapping = true
+                                game.start()
                                 
-                                Log.d("GameScreen", "Restarting game after collision with reset state: mode=${game.getCurrentMode()}, isOrangeState=$isOrangeState")
+                                Log.d("GameScreen", "Game started explicitly - gameState: $gameState, isPlaying: ${game.isPlaying}")
                             } catch (e: Exception) {
                                 Log.e("GameScreen", "Error restarting game: ${e.message}", e)
                             }
@@ -439,60 +586,70 @@ fun GameScreen(
                             val finalTapDuration = tapDuration
                             Log.d("GameScreen", "Final tap duration on release: $finalTapDuration")
                             
+                            // MODE ACTIVATION ENGINE - THIS IS A CRITICAL BLOCK
+                            // -----------------------------------------------
                             // Calculate the actual cycle position at release time
-                            val orangeTime = 400 // 0.4 seconds (increased from 300ms)
-                            val greenTime = 650   // 0.65 seconds (increased slightly from 600ms)
-                            val cycleTime = 900  // 0.9 seconds - full cycle time
+                            val orangeTimeStart = 300 // 0.3 seconds
+                            val orangeTimeEnd = 600   // 0.6 seconds
+                            val greenTimeStart = 600  // 0.6 seconds
+                            val greenTimeEnd = 900    // 0.9 seconds
+                            val cycleTime = 900       // 0.9 seconds - full cycle time
                             
                             // Use modulo to determine the cyclic position
                             val cyclicDuration = finalTapDuration % cycleTime
                             
-                            // Ensure we're not in a special mode already
-                            if (game.getCurrentMode() == GameMode.NORMAL && !isOrangeState) {
-                                Log.d("GameScreen", "Checking mode activation - cyclic duration: $cyclicDuration")
-                                
-                                if (cyclicDuration >= orangeTime && cyclicDuration < greenTime) {
-                                    // Activate Orange Mode - if we're in the orange part of the cycle
-                                    Log.d("GameScreen", "🔥 ORANGE STATE ACTIVATED ON RELEASE! cyclic: $cyclicDuration")
-                                    isOrangeState = true
-                                    orangeStateTimer = 0f
+                            // LOG DETAILED DIAGNOSTICS
+                            Log.d("GameScreen", "MODE ENGINE - cyclic: $cyclicDuration, " +
+                                  "orangeStart: $orangeTimeStart, orangeEnd: $orangeTimeEnd, " +
+                                  "greenStart: $greenTimeStart, greenEnd: $greenTimeEnd")
+                            
+                            // We can only activate special modes from NORMAL mode
+                            if (game.getCurrentMode() == GameMode.NORMAL) {
+                                // DETERMINE MODE BASED ON CURRENT COLOR AT RELEASE TIME
+                                when {
+                                    // YELLOW MODE - either at start of cycle or after completing a full cycle
+                                    cyclicDuration < orangeTimeStart -> {
+                                        Log.d("GameScreen", "🟡 YELLOW MODE - cyclicDuration: $cyclicDuration (< $orangeTimeStart)")
+                                        // Normal jump with tap power proportional to tap duration
+                                        val tapPower = min(2.0f, 1.0f + finalTapDuration / 600f)
+                                        game.jump(tapPower)
+                                    }
                                     
-                                    // Move scale update responsibility to RunnerGame
-                                    // Activate Orange Mode in game class - this will handle scaling
-                                    game.activateOrangeMode()
+                                    // ORANGE MODE - between orangeTimeStart and orangeTimeEnd
+                                    cyclicDuration >= orangeTimeStart && cyclicDuration < orangeTimeEnd -> {
+                                        Log.d("GameScreen", "🟠 ORANGE MODE ACTIVATED - cyclicDuration: $cyclicDuration")
+                                        isOrangeState = true
+                                        orangeStateTimer = 0f
+                                        game.activateOrangeMode()
+                                        game.jump(1.2f) // Jump with extra power
+                                    }
                                     
-                                    // Jump with extra power
-                                    game.jump(1.2f)
-                                } else if (cyclicDuration >= greenTime) {
-                                    // Activate Green Mode - if we're in the green part of the cycle
-                                    Log.d("GameScreen", "🌿 GREEN MODE ACTIVATED ON RELEASE! cyclic: $cyclicDuration")
+                                    // GREEN MODE - between greenTimeStart and greenTimeEnd
+                                    cyclicDuration >= greenTimeStart && cyclicDuration < greenTimeEnd -> {
+                                        Log.d("GameScreen", "🟢 GREEN MODE ACTIVATED - cyclicDuration: $cyclicDuration")
+                                        isOrangeState = false
+                                        orangeStateTimer = 0f
+                                        game.activateGreenMode()
+                                        // No jump for Green Mode - player controls directly with touch
+                                    }
                                     
-                                    // Activate Green mode in game class
-                                    game.activateGreenMode()
-                                    
-                                    // No jump for Green Mode - player controls directly with touch
-                                } else {
-                                    // Normal mode - Yellow part of the cycle
-                                    // Basic jump with tap power proportional to tap duration
-                                    val tapPower = min(2.0f, 1.0f + finalTapDuration / 600f)
-                                    Log.d("GameScreen", "Normal jump with power: $tapPower")
-                                    game.jump(tapPower)
+                                    // YELLOW MODE AGAIN - if we somehow exceed the cycle time
+                                    else -> {
+                                        Log.d("GameScreen", "🟡 YELLOW MODE (after cycle) - cyclicDuration: $cyclicDuration (>= $greenTimeEnd)")
+                                        // Normal jump with tap power proportional to tap duration
+                                        val tapPower = min(2.0f, 1.0f + finalTapDuration / 600f)
+                                        game.jump(tapPower)
+                                    }
                                 }
-                            } else {
-                                // Already in a special mode
-                                if (isOrangeState) {
-                                    Log.d("GameScreen", "Jumping in ORANGE state")
-                                    // Use higher jump multiplier for orange mode
-                                    game.jump(2.0f)
-                                } else if (game.getCurrentMode() == GameMode.GREEN) {
-                                    Log.d("GameScreen", "In GREEN mode - not jumping")
-                                    // No jump in Green mode - handled by vertical movement
-                                } else {
-                                    // Fallback - should not happen but just in case
-                                    Log.d("GameScreen", "Unexpected state - defaulting to normal jump")
-                                    game.jump(1.0f)
-                                }
+                            } else if (game.getCurrentMode() == GameMode.ORANGE) {
+                                // Already in Orange mode, just jump with the orange mode power
+                                game.jump(2.0f)
+                            } else if (game.getCurrentMode() == GameMode.GREEN) {
+                                // Already in Green mode - no jump
+                                Log.d("GameScreen", "Maintaining GREEN mode - no jump")
                             }
+                            // -----------------------------------------------
+                            // END OF MODE ACTIVATION ENGINE
                             
                             // Reset tap duration after processing the release action
                             tapDuration = 0L
@@ -504,11 +661,9 @@ fun GameScreen(
             )
         }
         .pointerInput(Unit) {
-            // Handle vertical drag for Green Mode
             detectVerticalDragGestures(
                 onDragStart = { offset ->
-                    // Start position for vertical drag
-                    // Only handle drag in Green Mode - add additional safety checks
+                    // Only handle drag in Green Mode
                     val currentGameMode = game.getCurrentMode()
                     if (currentGameMode == GameMode.GREEN && game.isPlaying) {
                         // Store the initial touch position for reference
@@ -572,33 +727,259 @@ fun GameScreen(
     ) {
         // Use frameKey as a key to force recomposition of Canvas on each frame
         key(frameKey) {
-            Canvas(modifier = Modifier
-                .fillMaxSize()
-                .offset(shakeOffset.x.dp, shakeOffset.y.dp) // Apply shake offset
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset(x = shakeOffset.x.dp, y = shakeOffset.y.dp)
             ) {
-                // Update canvas size
+                // Update canvas size if needed
                 if (size.width > 0 && size.height > 0) {
                     canvasSize = size
                 }
-
+                
                 try {
-                    // Cache frequently used values
+                    // Get canvas dimensions
                     val width = size.width
                     val height = size.height
                     val groundHeight = height * 0.1f
                     
+                    // Draw background based on level theme
+                    val level = game.getLevel()
+                    val skyColor = when (level) {
+                        1 -> ComposeColor(0xFF87CEEB) // Light blue for clear sky
+                        2 -> ComposeColor(0xFFFAB3A3) // Light pastel salmon color for better contrast with orange bird
+                        3 -> ComposeColor(0xFF3A608B) // Slightly lighter rainy blue
+                        4 -> ComposeColor(0xFF1A2030) // Slightly lighter night blue for better contrast
+                        else -> ComposeColor(0xFF87CEEB) // Default sky blue
+                    }
+                    
+                    // Draw ground based on level theme
+                    val groundColor = when (level) {
+                        1 -> ComposeColor(0xFF006400) // Darker green for level 1 to contrast with bird
+                        2 -> ComposeColor(0xFF8B4513) // Darker brown for sunset
+                        3 -> ComposeColor(0xFF004000) // Even darker green for rain level
+                        4 -> ComposeColor(0xFF001800) // Very dark green for night level
+                        else -> ComposeColor(0xFF90EE90) // Default light green
+                    }
+                    
                     // Draw background
                     drawRect(
-                        color = ComposeColor(0xFF87CEEB),  // Sky blue
+                        color = skyColor,
                         size = Size(width, height)
                     )
                     
                     // Draw ground
                     drawRect(
-                        color = ComposeColor(0xFF90EE90),  // Light green
+                        color = groundColor,
                         topLeft = Offset(0f, height - groundHeight),
                         size = Size(width, groundHeight)
                     )
+                    
+                    // Draw level-specific weather effects
+                    when (level) {
+                        1 -> {
+                            // Level 1: Clouds in clear sky
+                            clouds.forEach { (pos, size, opacity) ->
+                                // Draw main cloud body
+                                drawCircle(
+                                    color = ComposeColor(1f, 1f, 1f, opacity),
+                                    radius = size,
+                                    center = pos
+                                )
+                                
+                                // Draw smaller cloud puffs
+                                drawCircle(
+                                    color = ComposeColor(1f, 1f, 1f, opacity),
+                                    radius = size * 0.7f,
+                                    center = Offset(pos.x + size * 0.6f, pos.y)
+                                )
+                                
+                                drawCircle(
+                                    color = ComposeColor(1f, 1f, 1f, opacity),
+                                    radius = size * 0.6f,
+                                    center = Offset(pos.x - size * 0.6f, pos.y)
+                                )
+                                
+                                drawCircle(
+                                    color = ComposeColor(1f, 1f, 1f, opacity),
+                                    radius = size * 0.5f,
+                                    center = Offset(pos.x, pos.y - size * 0.4f)
+                                )
+                            }
+                        }
+                        2 -> {
+                            // Level 2: Sunset with nice sun
+                            val sunCenter = Offset(width * 0.3f, height * 0.2f)
+                            
+                            // Draw sun glow (outer)
+                            drawCircle(
+                                color = ComposeColor(1f, 0.5f, 0.1f, 0.2f),
+                                radius = 120f,
+                                center = sunCenter
+                            )
+                            
+                            // Draw sun glow (middle)
+                            drawCircle(
+                                color = ComposeColor(1f, 0.6f, 0.2f, 0.4f),
+                                radius = 90f,
+                                center = sunCenter
+                            )
+                            
+                            // Draw sun (inner)
+                            drawCircle(
+                                color = ComposeColor(1f, 0.8f, 0.2f, 0.9f),
+                                radius = 70f,
+                                center = sunCenter
+                            )
+                            
+                            // Draw sun rays
+                            sunRays.forEach { (angle, length, opacity) ->
+                                val angleRadians = angle * (PI.toFloat() / 180f)
+                                val startX = sunCenter.x + 70f * cos(angleRadians)
+                                val startY = sunCenter.y + 70f * sin(angleRadians)
+                                val endX = sunCenter.x + (70f + length) * cos(angleRadians)
+                                val endY = sunCenter.y + (70f + length) * sin(angleRadians)
+                                
+                                drawLine(
+                                    color = ComposeColor(1f, 0.7f, 0.2f, opacity),
+                                    start = Offset(startX, startY),
+                                    end = Offset(endX, endY),
+                                    strokeWidth = 3f
+                                )
+                            }
+                            
+                            // Draw sunset clouds
+                            for (i in 0 until 3) {
+                                val cloudY = height * 0.35f + i * 40f
+                                val cloudWidth = width * (0.5f + i * 0.1f)
+                                val cloudHeight = 20f + i * 10f
+                                
+                                drawOval(
+                                    color = ComposeColor(0.9f, 0.5f, 0.4f, 0.7f - i * 0.15f),
+                                    topLeft = Offset(width * 0.1f - i * 20f, cloudY),
+                                    size = Size(cloudWidth, cloudHeight)
+                                )
+                            }
+                        }
+                        3 -> {
+                            // Level 3: Rain with dark clouds
+                            
+                            // Draw multiple smaller rain clouds instead of one big one
+                            for (i in 0 until 6) {
+                                val xOffset = (i * width / 5f) % width
+                                val yVariation = (i % 3) * 40f
+                                val y = 40f + yVariation
+                                val size = 70f - (i % 3) * 10f
+                                val cloudOpacity = 0.7f + (i % 3) * 0.1f
+                                
+                                // Draw main cloud body
+                                drawCircle(
+                                    color = ComposeColor(0.3f, 0.3f, 0.4f, cloudOpacity),
+                                    radius = size,
+                                    center = Offset(xOffset, y)
+                                )
+                                
+                                // Draw additional puffs for each cloud
+                                drawCircle(
+                                    color = ComposeColor(0.3f, 0.3f, 0.4f, cloudOpacity),
+                                    radius = size * 0.7f,
+                                    center = Offset(xOffset + size * 0.5f, y + 10f)
+                                )
+                                
+                                drawCircle(
+                                    color = ComposeColor(0.3f, 0.3f, 0.4f, cloudOpacity),
+                                    radius = size * 0.6f,
+                                    center = Offset(xOffset - size * 0.4f, y + 5f)
+                                )
+                            }
+                            
+                            // Draw rain
+                            raindrops.forEach { (pos, size) ->
+                                drawLine(
+                                    color = ComposeColor(0.8f, 0.8f, 1f, 0.7f), // Increased opacity for better visibility
+                                    start = pos,
+                                    end = Offset(pos.x - 3f, pos.y + size), // Make rain slightly thicker
+                                    strokeWidth = 2.5f // Slightly thicker rain
+                                )
+                            }
+                        }
+                        4 -> {
+                            // Level 4: Night sky with twinkling stars
+                            stars.forEach { (pos, size, twinkleFactor) ->
+                                // Use twinkle factor to determine brightness
+                                val brightness = 0.5f + twinkleFactor * 0.5f
+                                
+                                // Draw star as a small circle with varying brightness
+                                drawCircle(
+                                    color = ComposeColor(brightness, brightness, brightness * 0.9f, brightness),
+                                    radius = size,
+                                    center = pos
+                                )
+                                
+                                // Add a glow effect for some stars
+                                if (twinkleFactor > 0.7f && size > 2f) {
+                                    drawCircle(
+                                        color = ComposeColor(brightness, brightness, brightness * 0.9f, 0.3f),
+                                        radius = size * 2f,
+                                        center = pos
+                                    )
+                                }
+                            }
+                            
+                            // Draw a larger moon in the night sky (2x larger)
+                            val moonCenter = Offset(width * 0.8f, height * 0.2f)
+                            val moonRadius = 100f // Increased from 50f to 100f (2x larger)
+                            
+                            // Draw main moon body with slight yellow tint
+                            drawCircle(
+                                color = ComposeColor(0.95f, 0.95f, 0.9f, 0.95f),
+                                radius = moonRadius,
+                                center = moonCenter
+                            )
+                            
+                            // Draw moon crater shadows with more detailed design
+                            // Large crater with shadow
+                            drawCircle(
+                                color = ComposeColor(0.75f, 0.75f, 0.7f, 0.6f),
+                                radius = moonRadius * 0.25f,
+                                center = Offset(moonCenter.x - moonRadius * 0.4f, moonCenter.y - moonRadius * 0.2f)
+                            )
+                            
+                            // Medium crater with shadow
+                            drawCircle(
+                                color = ComposeColor(0.8f, 0.8f, 0.75f, 0.5f),
+                                radius = moonRadius * 0.2f,
+                                center = Offset(moonCenter.x + moonRadius * 0.3f, moonCenter.y + moonRadius * 0.3f)
+                            )
+                            
+                            // Small crater with shadow
+                            drawCircle(
+                                color = ComposeColor(0.85f, 0.85f, 0.8f, 0.4f),
+                                radius = moonRadius * 0.15f,
+                                center = Offset(moonCenter.x + moonRadius * 0.45f, moonCenter.y - moonRadius * 0.35f)
+                            )
+                            
+                            // Add some smaller craters
+                            drawCircle(
+                                color = ComposeColor(0.83f, 0.83f, 0.78f, 0.5f),
+                                radius = moonRadius * 0.1f,
+                                center = Offset(moonCenter.x - moonRadius * 0.15f, moonCenter.y + moonRadius * 0.42f)
+                            )
+                            
+                            drawCircle(
+                                color = ComposeColor(0.87f, 0.87f, 0.82f, 0.4f),
+                                radius = moonRadius * 0.07f,
+                                center = Offset(moonCenter.x - moonRadius * 0.38f, moonCenter.y - moonRadius * 0.45f)
+                            )
+                            
+                            // Add a subtle glow around the moon
+                            drawCircle(
+                                color = ComposeColor(0.9f, 0.9f, 0.85f, 0.15f),
+                                radius = moonRadius * 1.3f,
+                                center = moonCenter
+                            )
+                        }
+                    }
                     
                     // Draw obstacles with simplified textures for better performance
                     game.getObstacles().forEach { obstacle ->
@@ -635,23 +1016,18 @@ fun GameScreen(
                         }
                     }
                     
-                    // Draw bird
+                    // Get the bird
                     val bird = game.getBird()
                     
                     // Draw trail when in orange state
                     if (isOrangeState && trailPositions.size > 1) {
-                        // Get the bird for proper positioning
-                        val birdObj = game.getBird()
-                        
                         // Define the pivot point at the back center of bird
-                        // Ensure it's exactly at the vertical center of the bird
                         val pivotPoint = Offset(
-                            birdObj.x,  // Back edge of the bird
-                            birdObj.y + (birdObj.height / 2)  // Exact vertical center
+                            bird.x,  // Back edge of the bird
+                            bird.y + (bird.height / 2)  // Exact vertical center
                         )
                         
                         // Calculate the bird's movement angle based on vertical velocity
-                        // Compare the current position with a recent past position
                         val recentPastIndex = max(0, trailPositions.size - 5)
                         val recentPosition = trailPositions[recentPastIndex]
                         
@@ -667,13 +1043,10 @@ fun GameScreen(
                         val maxAngle = 35f
                         val adjustedAngle = angleDegrees.coerceIn(-maxAngle, maxAngle)
                         
-                        Log.d("GameScreen", "Trail angle: $adjustedAngle degrees")
-                        
-                        // Define trail colors - use vibrant orange for trail but 50% more transparent
-                        val trailBaseColor = ComposeColor(1f, 0.5f, 0.1f, 0.35f)  // Original alpha was 0.7f, reduced by 50%
+                        // Define trail colors - use vibrant orange for trail
+                        val trailBaseColor = ComposeColor(1f, 0.5f, 0.1f, 0.35f)
                         
                         // Draw the trail as a plume attached to the back of the bird
-                        // Use rotation to follow the bird's movement direction
                         rotate(adjustedAngle, pivotPoint) {
                             // Create a path for the plume
                             val plumePath = Path()
@@ -693,12 +1066,12 @@ fun GameScreen(
                             // Control points for the plume curve - adjust for rounded edges
                             val control1 = Offset(
                                 pivotPoint.x - plumeLength * 0.3f,
-                                pivotPoint.y - bird.height * 0.2f  // More vertical offset for top rounding
+                                pivotPoint.y - bird.height * 0.2f
                             )
                             
                             val control2 = Offset(
                                 pivotPoint.x - plumeLength * 0.7f,
-                                pivotPoint.y + bird.height * 0.2f  // More vertical offset for bottom rounding
+                                pivotPoint.y + bird.height * 0.2f
                             )
                             
                             // Draw the plume with a Bezier curve for smooth shape
@@ -708,25 +1081,23 @@ fun GameScreen(
                                 plumeEndPoint.x, plumeEndPoint.y
                             )
                             
-                            // Draw multiple layers with steadily reducing thickness for a pointy end
-                            // Use a custom function to draw the trail with vertical height control
-                            val maxWidth = bird.width * 0.7f  // Width of the trail
-                            val trailHeight = bird.height * 0.95f  // 95% of bird height at the start
-                            val endHeight = bird.height * 0.05f  // 5% of bird height at the end
+                            // Draw trail with varying height
+                            val maxWidth = bird.width * 0.7f
+                            val trailHeight = bird.height * 0.95f
+                            val endHeight = bird.height * 0.05f
                             
-                            // Calculate points along the Bezier curve for manual drawing with varying height
-                            val numPoints = 35 // More points for smoother taper on longer trail
+                            // Calculate points along the Bezier curve
+                            val numPoints = 35
                             for (i in 0 until numPoints) {
-                                val t = i / (numPoints - 1f)  // Parametric position (0 to 1)
+                                val t = i / (numPoints - 1f)
                                 
-                                // Calculate position on the curve using Bezier formula
+                                // Calculate position using Bezier formula
                                 val mt = 1 - t
                                 val mt2 = mt * mt
                                 val mt3 = mt2 * mt
                                 val t2 = t * t
                                 val t3 = t2 * t
                                 
-                                // Cubic Bezier formula for center position
                                 val centerX = mt3 * pivotPoint.x + 
                                         3 * mt2 * t * control1.x + 
                                         3 * mt * t2 * control2.x + 
@@ -737,49 +1108,21 @@ fun GameScreen(
                                         3 * mt * t2 * control2.y + 
                                         t3 * plumeEndPoint.y
                                 
-                                // Simple smooth height transition from start to end
-                                // The cubic function gives a natural easing for the transition
-                                val easingFactor = t * t * (3 - 2 * t) // Smooth step function
+                                // Calculate height and width at this point
+                                val easingFactor = t * t * (3 - 2 * t)
                                 val currentHeight = trailHeight * (1 - easingFactor) + endHeight * easingFactor
-                                
-                                // Simple width transition - pure quadratic reduction with no bulges
-                                // This ensures width only decreases as we move away from the bird
                                 val widthFactor = (1 - t) * (1 - t)
                                 val segmentWidth = maxWidth * widthFactor
                                 
-                                // Opacity also reduces toward the end for a fade-out effect
-                                val alpha = 0.35f * (1 - t * 0.8f)
-                                
-                                // Draw vertical line (oval) for the trail segment
+                                // Draw oval segment
                                 val halfHeight = currentHeight / 2
-                                
-                                // Draw oval (stretched circle) at each point
                                 drawOval(
-                                    color = trailBaseColor.copy(alpha = alpha),
+                                    color = trailBaseColor.copy(alpha = 0.35f * (1 - t * 0.8f)),
                                     topLeft = Offset(centerX - segmentWidth/2, centerY - halfHeight),
                                     size = Size(segmentWidth, currentHeight)
                                 )
-                                
-                                // Add some subtle sparkles near the start of the trail
-                                if (t < 0.5f && i % 5 == 0) {
-                                    val sparkleColor = ComposeColor(1f, 0.9f, 0.3f, 0.3f)
-                                    val sparkleSize = segmentWidth * 0.3f
-                                    
-                                    // Contain sparkles within the trail height
-                                    val maxVerticalOffset = halfHeight * 0.7f
-                                    val offsetX = (Math.random() * segmentWidth * 0.4f - segmentWidth * 0.2f).toFloat()
-                                    val offsetY = (Math.random() * maxVerticalOffset * 2 - maxVerticalOffset).toFloat()
-                                    
-                                    drawCircle(
-                                        color = sparkleColor,
-                                        radius = sparkleSize,
-                                        center = Offset(centerX + offsetX, centerY + offsetY)
-                                    )
-                                }
                             }
                         }
-                    } else {
-                        Log.d("GameScreen", "❌ Not drawing trail - isOrangeState: $isOrangeState, trailPositions: ${trailPositions.size}")
                     }
                     
                     // Calculate bird color based on state
@@ -793,24 +1136,19 @@ fun GameScreen(
                         // Calculate the tap duration since start
                         val pressDuration = System.currentTimeMillis() - tapStartTime
                         
-                        // Define cycle times - 0.3 seconds for each color
-                        val orangeTime = 300 // 0.3 seconds
-                        val greenTime = 600   // 0.6 seconds
-                        val cycleTime = 900  // 0.9 seconds - full cycle time
+                        // DISPLAY COLORS CYCLE - mirrors the activation thresholds exactly
+                        val orangeTime = 300 // 0.3 seconds - MUST MATCH the activation engine above
+                        val greenTime = 600  // 0.6 seconds - MUST MATCH the activation engine above
+                        val cycleTime = 900  // 0.9 seconds - MUST MATCH the activation engine above
                         
                         // Use modulo to create a repeating cycle
                         val cyclicDuration = pressDuration % cycleTime
                         
-                        // Log the color cycling for debugging
-                        if (frameCount % 10 == 0) {
-                            Log.d("GameScreen", "Color cycling: duration=$pressDuration, cyclic=$cyclicDuration")
-                        }
-                        
                         // Determine color based on position in cycle
                         when {
-                            cyclicDuration < orangeTime -> ComposeColor.Yellow  // First third: Yellow
-                            cyclicDuration < greenTime -> ComposeColor(1f, 0.5f, 0f, 1f)  // Second third: Orange
-                            else -> ComposeColor(0.0f, 0.9f, 0.2f, 1f)  // Final third: Green
+                            cyclicDuration < orangeTime -> ComposeColor.Yellow      // First third: Yellow (0-299ms)
+                            cyclicDuration < greenTime -> ComposeColor(1f, 0.5f, 0f, 1f)  // Second third: Orange (300-599ms)
+                            else -> ComposeColor(0.0f, 0.9f, 0.2f, 1f)             // Final third: Green (600-899ms)
                         }
                     } else {
                         // Not tapping - always default to yellow in normal mode
@@ -823,7 +1161,7 @@ fun GameScreen(
                         topLeft = Offset(bird.x + bird.visualOffsetX, bird.y),  // Apply visual offset for shake effect
                         size = Size(bird.width, bird.height)
                     )
-                    
+
                     // Add eye for visual appeal
                     drawCircle(
                         color = ComposeColor.Black,
@@ -841,14 +1179,14 @@ fun GameScreen(
                             
                             // Draw outer bubble (more transparent)
                             drawCircle(
-                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.1f),  // Reduced from 0.15f to 0.1f
+                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.1f),
                                 radius = bubbleRadius,
                                 center = Offset(birdCenterX, birdCenterY)
                             )
                             
                             // Draw inner bubble (more transparent)
                             drawCircle(
-                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.05f),  // Reduced from 0.08f to 0.05f
+                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.05f),
                                 radius = bubbleRadius * 0.8f,
                                 center = Offset(birdCenterX, birdCenterY)
                             )
@@ -866,7 +1204,7 @@ fun GameScreen(
                                 val sparkleSize = bubbleRadius * (0.05f + shimmerRandom.nextFloat() * 0.05f)
                                 
                                 drawCircle(
-                                    color = ComposeColor(0.5f, 1.0f, 0.5f, 0.3f),  // Reduced from 0.4f to 0.3f
+                                    color = ComposeColor(0.5f, 1.0f, 0.5f, 0.3f),
                                     radius = sparkleSize,
                                     center = Offset(sparkleX, sparkleY)
                                 )
@@ -877,7 +1215,7 @@ fun GameScreen(
                             val timerArcSweepAngle = 360 * (1 - greenProgress)
                             
                             drawArc(
-                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.2f),  // Reduced from 0.3f to 0.2f
+                                color = ComposeColor(0.0f, 0.9f, 0.2f, 0.2f),
                                 startAngle = -90f,
                                 sweepAngle = timerArcSweepAngle,
                                 useCenter = false,
@@ -888,14 +1226,18 @@ fun GameScreen(
                         }
                     }
                     
-                    // Draw score and high score
+                    // Draw level number on the top left
                     val paint = Paint().apply {
                         color = AndroidColor.WHITE
                         textSize = 60f
-                        textAlign = Paint.Align.RIGHT
+                        textAlign = Paint.Align.LEFT
                     }
                     
                     drawContext.canvas.nativeCanvas.apply {
+                        drawText("Level: $level", 50f, 100f, paint)
+                        
+                        // Draw score and high score on the right side
+                        paint.textAlign = Paint.Align.RIGHT
                         drawText("Score: $score", width - 50f, 100f, paint)
                         drawText("High Score: $highScore", width - 50f, 170f, paint)
                         
@@ -922,10 +1264,10 @@ fun GameScreen(
                 } catch (e: Exception) {
                     Log.e("GameScreen", "Error in Canvas drawing: ${e.message}", e)
                 }
-                }
             }
         }
-        
+    }
+    
     // Draw game version only (remove duplicated score, high score, and tap to start)
     if (!game.isPlaying) {
         Column(
