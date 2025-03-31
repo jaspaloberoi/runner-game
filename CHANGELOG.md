@@ -1,6 +1,36 @@
 # Runner Game - Changelog
 
-## Version 3.0 (Current)
+## Version 3.1 (Current)
+**Feature Update: Themed Levels & Enhanced Mode Transitions**
+
+### Themed Levels
+- Implemented 4 distinct themed backgrounds that cycle as player progresses:
+  - Level 1: Clouds in Clear Sky - Fluffy white clouds moving across a bright blue sky
+  - Level 2: Sunset with Nice Sun - Warm pastel colors with sun rays and horizon clouds
+  - Level 3: Rain with Dark Clouds - Multiple rain clouds and animated rainfall
+  - Level 4: Night Sky with Twinkling Stars - Distributed stars throughout the entire sky with a detailed moon
+
+### Mode Transition Improvements
+- Fixed Orange mode activation logic with reliable timing-based mode cycling
+- Green mode can now only be activated from Normal mode
+- Added detailed color cycle system (Yellow → Orange → Green) with 300ms intervals
+- Improved mode diagnostic logging for better debugging
+- Fixed mode transition animations to prevent game state conflicts
+
+### Visual Enhancements
+- Increased moon size by 2× in night level with detailed crater shadows
+- Added bird outline for better visibility across all level backgrounds
+- Completely restored the orange trail effect with proper Bezier curve drawing
+- Enhanced green bubble visualization with shimmer effects and timer indicator
+- Added smooth sin-based animation for bird shake effect
+
+### Gameplay and UX Refinements
+- Added "tap to start" screen instead of auto-starting the game
+- Fixed level cycling (changes every 2 obstacles, cycles from 1-4)
+- Improved game state handling to ensure proper initialization
+- Fixed numerous edge cases with mode transitions that could cause incorrect behavior
+
+## Version 3.0
 **Stable Release: Mode Refinements & Performance Improvements**
 
 ### Game Mode Enhancements
