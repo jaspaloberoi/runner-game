@@ -1,7 +1,7 @@
 package com.example.test.game
 
 /**
- * Runner Game - Version 3.1
+ * Runner Game - Version 3.2
  * 
  * Features:
  * - Smooth scrolling with key-based Canvas recomposition
@@ -18,6 +18,9 @@ package com.example.test.game
  * - Bug fixes for color transitions and state management
  * - Level cycling from 1-4 with themed backgrounds
  * - Improved mode activation logic
+ * - Properly distributed stars across entire night sky
+ * - Realistic moon craters with natural appearance
+ * - Rain that fills the entire screen from the start
  */
 
 import android.util.Log
@@ -30,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,6 +62,8 @@ import kotlin.random.Random
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Fill
 
 // Color helper functions
 fun ComposeColor.darker(factor: Float): ComposeColor {
@@ -189,15 +195,23 @@ fun GameScreen(
             sunRays.add(Triple(angle, length, opacity))
         }
         
-        // Initialize stars for level 4 (night sky) - distribute throughout the entire sky
-        for (i in 0 until 150) {
+        // Initialize stars for level 4 (night sky) - completely fill the entire sky
+        for (i in 0 until 150) { // Reduced back from 200 to 150 stars
             val x = (Math.random() * 1000).toFloat()
-            // Make sure stars cover the ENTIRE sky height - using 90% of screen height
-            val y = (Math.random() * 600).toFloat() // Will be adjusted once we know actual canvas size
+            // Force stars to be distributed across entire height (0-100% of available height)
+            // Use explicit values to ensure full coverage
+            val heightPercentage = Math.random() // 0.0 to 1.0
+            val y = when {
+                heightPercentage < 0.33 -> Math.random() * 200 // Top third: 0-200
+                heightPercentage < 0.67 -> 200 + Math.random() * 200 // Middle third: 200-400
+                else -> 400 + Math.random() * 200 // Bottom third: 400-600
+            }.toFloat()
+            
             val size = (1f + Math.random() * 3f).toFloat()
-            val twinkleFactor = Math.random().toFloat() // Used for twinkling effect
+            val twinkleFactor = Math.random().toFloat()
             stars.add(Triple(Offset(x, y), size, twinkleFactor))
         }
+        Log.d("GameScreen", "Initialized stars with forced distribution across full height")
     }
     
     // Update weather effects
@@ -228,8 +242,22 @@ fun GameScreen(
             
             // Level 3: Rain with dark clouds
             if (level == 3) {
-                // Add new raindrops
-                if (raindrops.size < 200) {
+                // Pre-populate rain across the entire screen height if empty
+                if (raindrops.isEmpty() && canvasHeight > 0) {
+                    // Fill the entire sky with raindrops from the start
+                    for (i in 0 until 200) {
+                        val x = (Math.random() * canvasWidth).toFloat()
+                        // Distribute raindrops throughout the entire sky height
+                        val groundY = canvasHeight - canvasHeight * 0.1f // Ground height is 10% of canvas height
+                        val y = (Math.random() * groundY).toFloat() // Full height distribution
+                        val size = (10f + Math.random() * 20f).toFloat()
+                        raindrops.add(Pair(Offset(x, y), size))
+                    }
+                    Log.d("GameScreen", "Pre-populated rain across full screen height")
+                }
+                
+                // Add new raindrops at the top
+                while (raindrops.size < 200) {
                     val x = (Math.random() * canvasWidth).toFloat()
                     val y = (Math.random() * 50).toFloat() // Start at top
                     val size = (10f + Math.random() * 20f).toFloat()
@@ -263,42 +291,90 @@ fun GameScreen(
             
             // Level 4: Twinkling stars in night sky
             if (level == 4) {
-                val updatedStars = mutableListOf<Triple<Offset, Float, Float>>()
+                // Need to reinitialize stars explicitly, previous code was overriding this
+                val forceReinitialize = stars.isEmpty() || stars.size < 150 || 
+                    canvasHeight > 0 && (
+                        // Check if we don't have any stars in the bottom third of the screen
+                        !stars.any { (pos, _, _) -> pos.y > canvasHeight * 0.67f } ||
+                        // Check if we don't have any stars in the middle third of the screen
+                        !stars.any { (pos, _, _) -> pos.y > canvasHeight * 0.33f && pos.y < canvasHeight * 0.67f }
+                    )
                 
-                // If stars list is empty or has less than 150 stars, reinitialize stars across the entire sky
-                if (stars.isEmpty() || stars.size < 150 || canvasHeight > 0 && stars[0].first.y > canvasHeight * 0.5f) {
+                if (forceReinitialize) {
+                    // Force reinitialize stars to ensure proper distribution
                     stars.clear()
-                    for (i in 0 until 150) {
+                    
+                    // Generate 150 stars with forced distribution across all thirds of the screen
+                    val starsPerThird = 50 // Exactly 50 stars per third
+                    Log.d("GameScreen", "FORCE REINITIALIZING STARS - Canvas height: $canvasHeight")
+                    
+                    // Top third
+                    for (i in 0 until starsPerThird) {
                         val x = (Math.random() * canvasWidth).toFloat()
-                        // Distribute stars across the ENTIRE sky (0% to 90% of screen height)
-                        val y = (Math.random() * canvasHeight * 0.9f).toFloat()
+                        val y = (Math.random() * canvasHeight * 0.33f).toFloat() // Top third: 0-33%
                         val size = (1f + Math.random() * 3f).toFloat()
                         val twinkleFactor = Math.random().toFloat()
                         stars.add(Triple(Offset(x, y), size, twinkleFactor))
                     }
-                    Log.d("GameScreen", "Reinitialized stars across entire sky height: ${canvasHeight}")
-                }
-                
-                stars.forEach { star ->
-                    val (pos, size, twinkleFactor) = star
                     
-                    // Create twinkling effect by varying the twinkle factor
-                    val newTwinkleFactor = if (Math.random() < 0.05) {
-                        // 5% chance to change twinkling state each frame
-                        (Math.random()).toFloat()
-                    } else {
-                        twinkleFactor
+                    // Middle third
+                    for (i in 0 until starsPerThird) {
+                        val x = (Math.random() * canvasWidth).toFloat()
+                        val y = (canvasHeight * 0.33f + Math.random() * canvasHeight * 0.34f).toFloat() // Middle third: 33-67%
+                        val size = (1f + Math.random() * 3f).toFloat()
+                        val twinkleFactor = Math.random().toFloat()
+                        stars.add(Triple(Offset(x, y), size, twinkleFactor))
                     }
                     
-                    updatedStars.add(Triple(pos, size, newTwinkleFactor))
+                    // Bottom third
+                    for (i in 0 until starsPerThird) {
+                        val x = (Math.random() * canvasWidth).toFloat()
+                        val y = (canvasHeight * 0.67f + Math.random() * canvasHeight * 0.33f).toFloat() // Bottom third: 67-100%
+                        val size = (1f + Math.random() * 3f).toFloat()
+                        val twinkleFactor = Math.random().toFloat()
+                        stars.add(Triple(Offset(x, y), size, twinkleFactor))
+                    }
+                    
+                    // Log verification
+                    val topCount = stars.count { (pos, _, _) -> pos.y < canvasHeight * 0.33f }
+                    val midCount = stars.count { (pos, _, _) -> pos.y >= canvasHeight * 0.33f && pos.y < canvasHeight * 0.67f }
+                    val bottomCount = stars.count { (pos, _, _) -> pos.y >= canvasHeight * 0.67f }
+                    Log.d("GameScreen", "Stars distribution - Top: $topCount, Middle: $midCount, Bottom: $bottomCount, Total: ${stars.size}")
                 }
                 
-                stars.clear()
-                stars.addAll(updatedStars)
+                // Create extremely slow, subtle twinkling effect by updating a few stars each frame
+                val starsToUpdate = minOf((stars.size * 0.02).toInt(), 3) // Update at most 3 stars per frame (2%)
+                
+                if (starsToUpdate > 0 && stars.isNotEmpty()) {
+                    val updatedStars = stars.toMutableList()
+                    
+                    // Select random stars to update (unique indices)
+                    val indices = mutableSetOf<Int>()
+                    while (indices.size < starsToUpdate) {
+                        indices.add((Math.random() * stars.size).toInt())
+                    }
+                    
+                    // Update only the selected stars
+                    indices.forEach { index ->
+                        if (index < stars.size) { // Safety check
+                            val star = stars[index]
+                            val (pos, size, twinkleFactor) = star
+                            
+                            // Make the brightness change extremely subtle but visible
+                            val delta = (Math.random().toFloat() * 0.2f - 0.1f) // -0.1 to +0.1
+                            val newTwinkleFactor = (twinkleFactor + delta).coerceIn(0f, 1f)
+                            updatedStars[index] = Triple(pos, size, newTwinkleFactor)
+                        }
+                    }
+                    
+                    stars.clear()
+                    stars.addAll(updatedStars)
+                }
             }
             
-            // Short delay before next update
-            delay(16) // ~60fps
+            // Only run at 5fps for star twinkling to make it much slower
+            val frameDelay = if (level == 4) 200 else 16 // 5fps for stars, 60fps for other effects
+            delay(frameDelay.toLong())
         }
     }
     
@@ -926,9 +1002,9 @@ fun GameScreen(
                                 }
                             }
                             
-                            // Draw a larger moon in the night sky (2x larger)
+                            // Draw a larger moon in the night sky
                             val moonCenter = Offset(width * 0.8f, height * 0.2f)
-                            val moonRadius = 100f // Increased from 50f to 100f (2x larger)
+                            val moonRadius = 100f // 2x larger moon
                             
                             // Draw main moon body with slight yellow tint
                             drawCircle(
@@ -937,40 +1013,142 @@ fun GameScreen(
                                 center = moonCenter
                             )
                             
-                            // Draw moon crater shadows with more detailed design
-                            // Large crater with shadow
-                            drawCircle(
-                                color = ComposeColor(0.75f, 0.75f, 0.7f, 0.6f),
-                                radius = moonRadius * 0.25f,
-                                center = Offset(moonCenter.x - moonRadius * 0.4f, moonCenter.y - moonRadius * 0.2f)
+                            // Draw moon craters with more realistic, irregular shapes (less geometric)
+                            // Create more natural looking craters with varied opacity
+                            
+                            // Large main crater (Mare Imbrium-like feature)
+                            val pathImbrium = Path().apply {
+                                val craterRadius = moonRadius * 0.38f
+                                val craterCenter = Offset(
+                                    moonCenter.x - moonRadius * 0.25f, 
+                                    moonCenter.y - moonRadius * 0.15f
+                                )
+                                
+                                // Start with an irregular oval shape
+                                moveTo(
+                                    craterCenter.x - craterRadius * 1.1f, 
+                                    craterCenter.y
+                                )
+                                
+                                // Create an irregular curve for the top of the crater
+                                cubicTo(
+                                    craterCenter.x - craterRadius * 0.9f, craterCenter.y - craterRadius * 0.8f,
+                                    craterCenter.x + craterRadius * 0.6f, craterCenter.y - craterRadius * 0.9f,
+                                    craterCenter.x + craterRadius * 0.8f, craterCenter.y - craterRadius * 0.3f
+                                )
+                                
+                                // Continue the curve to the right side
+                                cubicTo(
+                                    craterCenter.x + craterRadius * 1.0f, craterCenter.y + craterRadius * 0.1f,
+                                    craterCenter.x + craterRadius * 0.9f, craterCenter.y + craterRadius * 0.5f,
+                                    craterCenter.x + craterRadius * 0.7f, craterCenter.y + craterRadius * 0.7f
+                                )
+                                
+                                // Complete the curve back to start
+                                cubicTo(
+                                    craterCenter.x + craterRadius * 0.3f, craterCenter.y + craterRadius * 0.9f,
+                                    craterCenter.x - craterRadius * 0.5f, craterCenter.y + craterRadius * 0.8f,
+                                    craterCenter.x - craterRadius * 1.1f, craterCenter.y
+                                )
+                                
+                                close()
+                            }
+                            
+                            // Draw the large crater with a shadow gradient
+                            drawPath(
+                                path = pathImbrium,
+                                color = ComposeColor(0.85f, 0.85f, 0.8f, 0.35f),
+                                style = Fill
                             )
                             
-                            // Medium crater with shadow
-                            drawCircle(
-                                color = ComposeColor(0.8f, 0.8f, 0.75f, 0.5f),
-                                radius = moonRadius * 0.2f,
-                                center = Offset(moonCenter.x + moonRadius * 0.3f, moonCenter.y + moonRadius * 0.3f)
+                            // Create several smaller craters with more natural shapes
+                            
+                            // Smaller crater 1 (Tycho-like with subtle rays)
+                            val craterTycho = Offset(
+                                moonCenter.x + moonRadius * 0.4f,
+                                moonCenter.y + moonRadius * 0.35f
                             )
                             
-                            // Small crater with shadow
+                            // Draw the crater with a subtle gradient
+                            val tychoRadius = moonRadius * 0.12f
                             drawCircle(
-                                color = ComposeColor(0.85f, 0.85f, 0.8f, 0.4f),
-                                radius = moonRadius * 0.15f,
-                                center = Offset(moonCenter.x + moonRadius * 0.45f, moonCenter.y - moonRadius * 0.35f)
+                                color = ComposeColor(0.82f, 0.82f, 0.78f, 0.4f),
+                                radius = tychoRadius,
+                                center = craterTycho
                             )
                             
-                            // Add some smaller craters
-                            drawCircle(
-                                color = ComposeColor(0.83f, 0.83f, 0.78f, 0.5f),
-                                radius = moonRadius * 0.1f,
-                                center = Offset(moonCenter.x - moonRadius * 0.15f, moonCenter.y + moonRadius * 0.42f)
+                            // Add subtle ray pattern for Tycho
+                            for (i in 0 until 6) {
+                                val angle = (i * 60f) * (PI.toFloat() / 180f)
+                                val rayLength = tychoRadius * (1.8f + Math.random().toFloat() * 0.8f)
+                                val startX = craterTycho.x + tychoRadius * 0.8f * cos(angle)
+                                val startY = craterTycho.y + tychoRadius * 0.8f * sin(angle)
+                                val endX = craterTycho.x + rayLength * cos(angle)
+                                val endY = craterTycho.y + rayLength * sin(angle)
+                                
+                                drawLine(
+                                    color = ComposeColor(0.88f, 0.88f, 0.85f, 0.15f + Math.random().toFloat() * 0.1f),
+                                    start = Offset(startX, startY),
+                                    end = Offset(endX, endY),
+                                    strokeWidth = 3f + Math.random().toFloat() * 2f,
+                                    cap = StrokeCap.Round
+                                )
+                            }
+                            
+                            // Copernicus-like crater
+                            val copernicus = Offset(
+                                moonCenter.x - moonRadius * 0.5f,
+                                moonCenter.y + moonRadius * 0.45f
+                            )
+                            val pathCopernicus = Path().apply {
+                                val r = moonRadius * 0.14f
+                                addOval(Rect(
+                                    left = copernicus.x - r * 1.05f,
+                                    top = copernicus.y - r * 0.95f,
+                                    right = copernicus.x + r * 1.05f,
+                                    bottom = copernicus.y + r * 1.05f
+                                ))
+                            }
+                            
+                            // Draw with a subtle shadow and highlight
+                            drawPath(
+                                path = pathCopernicus,
+                                color = ComposeColor(0.86f, 0.86f, 0.82f, 0.3f),
+                                style = Fill
                             )
                             
+                            // Central peak in Copernicus
                             drawCircle(
-                                color = ComposeColor(0.87f, 0.87f, 0.82f, 0.4f),
-                                radius = moonRadius * 0.07f,
-                                center = Offset(moonCenter.x - moonRadius * 0.38f, moonCenter.y - moonRadius * 0.45f)
+                                color = ComposeColor(0.9f, 0.9f, 0.87f, 0.25f),
+                                radius = moonRadius * 0.04f,
+                                center = Offset(copernicus.x, copernicus.y)
                             )
+                            
+                            // A few scattered small craters
+                            for (i in 0 until 8) {
+                                val angle = (i * 45f + Math.random().toFloat() * 20f - 10f) * (PI.toFloat() / 180f)
+                                val distance = moonRadius * (0.4f + Math.random().toFloat() * 0.4f)
+                                val craterSize = moonRadius * (0.03f + Math.random().toFloat() * 0.05f)
+                                val opacity = 0.2f + Math.random().toFloat() * 0.2f
+                                
+                                val craterX = moonCenter.x + distance * cos(angle)
+                                val craterY = moonCenter.y + distance * sin(angle)
+                                
+                                drawCircle(
+                                    color = ComposeColor(0.88f, 0.88f, 0.84f, opacity),
+                                    radius = craterSize,
+                                    center = Offset(craterX, craterY)
+                                )
+                                
+                                // Some craters have inner shadow
+                                if (Math.random() > 0.5) {
+                                    drawCircle(
+                                        color = ComposeColor(0.82f, 0.82f, 0.78f, opacity * 0.7f),
+                                        radius = craterSize * 0.7f,
+                                        center = Offset(craterX + craterSize * 0.15f, craterY + craterSize * 0.15f)
+                                    )
+                                }
+                            }
                             
                             // Add a subtle glow around the moon
                             drawCircle(

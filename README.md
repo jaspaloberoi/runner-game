@@ -28,7 +28,7 @@ A challenging 2D runner game for Android where players control a bird that must 
 ## Color Modes
 
 - **Yellow (Normal)**: 
-  - Initial mode with standard speed
+  - Initial mode with standard speed (increases to 1.5× after 5 seconds)
   - Enhanced jump height (1.5x)
   - Full screen vertical movement
 

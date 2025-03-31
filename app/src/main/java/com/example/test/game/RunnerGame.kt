@@ -349,6 +349,16 @@ class RunnerGame(
             }
         }
         
+        // Check for normal mode speed increase after playing for 5 seconds
+        if (currentMode == GameMode.NORMAL && !normalModeSpeedIncreased) {
+            val gamePlayTime = System.currentTimeMillis() - gameStartTime
+            if (gamePlayTime > 5000) { // 5 seconds
+                normalModeSpeedIncreased = true
+                speedMultiplier = 1.5f // Increase normal mode speed by 50% after 5 seconds
+                Log.d("RunnerGame", "Normal mode speed increased after 5 seconds: $speedMultiplier")
+            }
+        }
+        
         // Update physics with deltaTime
         val currentSpeed = baseSpeed * speedMultiplier
         

@@ -20,7 +20,7 @@ import com.example.test.ui.theme.TestTheme
 
 class MainActivity : ComponentActivity() {
     companion object {
-        const val VERSION = "3.1"
+        const val VERSION = "3.2"
         const val VERSION_CODE = 13
         
         // Singleton for GameScreen tracking

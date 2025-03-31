@@ -1,5 +1,28 @@
 # Runner Game - Changelog
 
+## Version 3.2 (Current)
+**Bug Fix Update: Visual Enhancements and Engine Improvements**
+
+### Visual Improvements
+- Fixed stars distribution to cover the entire night sky (all screen thirds)
+- Improved star twinkling algorithm for subtler, more natural effect
+- Enhanced moon surface with realistic irregular craters and maria
+- Added ray pattern to Tycho-like crater on the moon
+- Ensured rain fills the entire screen height from the start of rain level
+- Optimized update rates for different visual effects
+
+### Engine Improvements
+- Restored normal mode speed increase after 5 seconds (1.0× → 1.5×)
+- Fixed potential redundancy in star distribution code
+- Added verification logging to ensure proper star distribution
+- Fixed issues that could cause visual elements to be incorrectly initialized
+- Added detailed distribution tracking for visual elements
+
+### Game Speed Summary
+- Normal Mode: 1.0× at start, increases to 1.5× after 5 seconds
+- Orange Mode: 3.0× (increased from 2.0×)
+- Green Mode: 4.0× (increased from 3.0×)
+
 ## Version 3.1 (Current)
 **Feature Update: Themed Levels & Enhanced Mode Transitions**
 
