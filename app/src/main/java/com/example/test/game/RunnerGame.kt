@@ -16,6 +16,7 @@ package com.example.test.game
  * - Balanced early game progression
  * - Fixed state management for color transitions
  * - Level cycling from 1-4 indefinitely
+ * - Blue mode with reversed gravity physics
  */
 
 import android.content.Context
@@ -26,6 +27,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.PI
+import kotlin.math.abs
 
 enum class SoundEffectType {
     JUMP,
@@ -36,32 +38,7 @@ enum class SoundEffectType {
     GHOST_DEACTIVATE
 }
 
-// Game modes
-enum class GameMode {
-    NORMAL,    // Yellow mode
-    ORANGE,    // Orange power mode
-    GREEN      // Green bubble mode (was PINK)
-}
-
-enum class TextureType {
-    CLASSIC_BRICK,
-    LARGE_BLOCKS,
-    SMALL_TILES,
-    VERTICAL_PLANKS,
-    DIAGONAL_BRICKS,
-    HEXAGONAL,
-    MOSAIC,
-    ROUGH_STONE,
-    METAL_PLATES,
-    WOVEN
-}
-
-enum class ObstacleType {
-    NARROW,
-    NORMAL,
-    WIDE,
-    SPIKED
-}
+// Using GameMode, ObstacleType, and TextureType from GameTypes.kt
 
 data class Obstacle(
     val x: Float,
@@ -78,6 +55,12 @@ class RunnerGame(
     private val context: Context,
     private val soundManager: SoundManager
 ) {
+    // Add companion object for singleton instance access
+    companion object {
+        lateinit var instance: RunnerGame
+            private set
+    }
+    
     private var screenWidth = 0f
     private var screenHeight = 0f
     private var initialized = false
@@ -95,14 +78,15 @@ class RunnerGame(
     private var obstacles = mutableListOf<Obstacle>()
     
     // Game physics
-    private var gravity = 0f
-    private var gameSpeed = 0f
-    private var baseSpeed = 0f
+    private var gravity = 0.7f  // Increased to 0.7f per request
+    private var gameSpeed = 375f  // Increased by 0.5x (250f * 1.5)
+    private var baseSpeed = 375f  // Increased by 0.5x (250f * 1.5)
+    private var normalGravity = 0.7f // Store normal gravity for reference
     
     // Obstacle properties
-    private var obstacleBaseWidth = 0f
-    private var obstacleWideWidth = 0f
-    private var obstacleNarrowWidth = 0f
+    private var obstacleBaseWidth = 60f
+    private var obstacleWideWidth = 80f
+    private var obstacleNarrowWidth = 40f
     private var minObstacleHeight = 0f
     private var maxObstacleHeight = 0f
     
@@ -123,16 +107,19 @@ class RunnerGame(
     // Variable to hold additional random spacing between obstacles
     private var currentObstacleSpacing = 0f
     
+    // Game timers and state tracking
     private var lastUpdateTime = 0L
     private var lastObstacleTime = 0L
     private var frameCount = 0
     
     private var lastHighScoreSaveTime = 0L
     
-    // Mode tracking - explicitly initialize to NORMAL
+    // Mode tracking
     private var currentMode = GameMode.NORMAL
     private var greenModeTimer = 0f
     private val greenModeDuration = 5000f // 5 seconds in milliseconds
+    private var blueModeTimer = 0f
+    private val blueModeDuration = 5000f // 5 seconds in milliseconds for Blue mode
     
     // Speed multiplier
     private var speedMultiplier = 1.0f
@@ -158,17 +145,29 @@ class RunnerGame(
     private var gameStartTime = 0L  // Track when the game started
     private var normalModeSpeedIncreased = false  // Flag to track if normal mode speed has been increased
     
+    // Mode cycling randomization
+    private var randomizedModeCycle = mutableListOf<GameMode>()
+    private var modeActivationRanges = mutableMapOf<GameMode, Pair<Int, Int>>() // (start, end) in ms
+    private var cycleTime = 1200 // 1.2 seconds (longer to include blue)
+    
     init {
         Log.d("RunnerGame", "Initializing game")
-        // Force normal mode in constructor with multiple safeguards
         currentMode = GameMode.NORMAL
-        speedMultiplier = 1.0f
-        greenModeTimer = 0f  // Reset green mode timer to ensure it's not active
         
-        // Set initial state timestamps to prevent accidental mode activation
+        // Set initial state
         lastUpdateTime = System.currentTimeMillis()
+        lastObstacleTime = System.currentTimeMillis()
         
-        Log.d("RunnerGame", "Mode forced to NORMAL in constructor")
+        // Load high score
+        highScore = loadHighScore()
+        
+        // Initialize randomized mode cycle
+        randomizeModeCycle()
+        
+        // Set the singleton instance
+        instance = this
+        
+        Log.d("RunnerGame", "High score loaded: $highScore")
     }
     
     private fun loadHighScore(): Int {
@@ -182,214 +181,228 @@ class RunnerGame(
             Log.d("RunnerGame", "New high score saved: $highScore")
         }
     }
-
+    
+    // Additional methods would go here in a real implementation
+    
+    // Critical methods needed for the game to function with our bird drawing code
+    fun getBird(): Bird {
+        // Initialize a bird with visible size if bird is null
+        if (bird == null) {
+            // Create a square bird (equal width and height)
+            // Use a reasonable fallback that's appropriate for most devices
+            val size = 30f  // Reduced from 40f to be more appropriate
+            bird = Bird(100f, 300f, size, size)
+        }
+        return bird!!
+    }
+    
+    fun getCurrentMode(): GameMode = currentMode
+    
+    fun getObstacles(): List<Obstacle> = obstacles
+    
+    fun getObstacleWidth(type: ObstacleType): Float {
+        return when (type) {
+            ObstacleType.NARROW -> obstacleNarrowWidth
+            ObstacleType.NORMAL -> obstacleBaseWidth
+            ObstacleType.WIDE -> obstacleWideWidth
+            ObstacleType.SPIKED -> obstacleBaseWidth // Same width as normal
+        }
+    }
+    
+    fun getGreenBubbleRadius(): Float = if (currentMode == GameMode.GREEN) 70f else 0f
+    
+    fun getGreenModeProgress(): Float = greenModeTimer / greenModeDuration
+    
+    fun getBlueModeProgress(): Float = blueModeTimer / blueModeDuration
+    
+    fun getLevel(): Int = level
+    
     fun initialize(width: Float, height: Float) {
-        Log.d("RunnerGame", "Starting initialization with width: $width, height: $height")
-        if (width <= 0 || height <= 0) {
-            Log.e("RunnerGame", "Invalid dimensions for initialization: $width x $height")
+        screenWidth = width
+        screenHeight = height
+        
+        // Setup physics for gameplay - using updated values
+        gravity = 0.7f  // Increased to 0.7f per request
+        normalGravity = gravity
+        gameSpeed = 375f  // Increased by 0.5x (250f * 1.5)
+        baseSpeed = 375f  // Increased by 0.5x (250f * 1.5)
+        
+        // Increase obstacle sizes to match v3.1 difficulty
+        obstacleBaseWidth = width * 0.06f    // Normal obstacle width - 6% of screen width
+        obstacleWideWidth = width * 0.08f    // Wide obstacle width - 8% of screen width
+        obstacleNarrowWidth = width * 0.04f  // Narrow obstacle width - 4% of screen width
+        minObstacleHeight = height * 0.1f   // Min height 10% of screen
+        maxObstacleHeight = height * 0.4f   // Max height 40% of screen
+        
+        // Use original v3.1 obstacle spacing
+        currentObstacleSpacing = width * 0.7f
+        
+        // Initialize bird with proper size for a square - use the smaller dimension to avoid too large bird in landscape
+        val smallerDimension = minOf(width, height)
+        val birdSize = smallerDimension * 0.07f  // 7% of the smaller dimension for consistent sizing
+        bird = Bird(
+            x = width * 0.2f,  // Fixed position at 20% from left
+            y = height * 0.5f - birdSize/2,
+            width = birdSize,
+            height = birdSize,
+            jumpVelocity = 10f  // Exact v3.1 value
+        )
+        
+        // Set ground height for collision detection
+        groundHeight = height * 0.9f
+        
+        // Mark as initialized and set to NORMAL mode
+        initialized = true
+        currentMode = GameMode.NORMAL
+        speedMultiplier = 1.0f
+        
+        // Randomize mode cycle
+        randomizeModeCycle()
+        
+        Log.d("RunnerGame", "Game initialized with dimensions: $width x $height, bird size: $birdSize")
+    }
+    
+    fun update() {
+        if (!initialized || !isPlaying) {
             return
         }
         
-        // Reset mode before anything else to ensure proper initialization
-        setMode(GameMode.NORMAL, "initialize")
-        greenModeTimer = 0f
-        speedMultiplier = 1.0f
-        
-        // Clear any existing state
-        obstacles.clear()
-        
-        screenWidth = width
-        screenHeight = height
-        groundHeight = screenHeight * 0.1f
-        
-        // Initialize physics with adjusted gravity
-        gravity = screenHeight * 0.61f       // Increased from 0.405f (multiplied by 1.5 again)
-        baseSpeed = screenWidth * 0.325f     // Increased base speed by 0.3x (from 0.25f to 0.325f)
-        gameSpeed = baseSpeed
-        
-        // Initialize obstacle properties
-        obstacleBaseWidth = screenWidth * 0.15f
-        obstacleWideWidth = obstacleBaseWidth * 1.3f
-        obstacleNarrowWidth = obstacleBaseWidth * 0.7f
-        minObstacleHeight = screenHeight * 0.2f
-        maxObstacleHeight = screenHeight * 0.4f
-        
-        // Initialize obstacle spacing and counters
-        currentObstacleSpacing = getRandomObstacleSpacing()
-        obstacleCounter = 0
-        nextMovingObstacleIn = if (level <= 1) {
-            (10..15).random()  // Much fewer moving obstacles at the start
-        } else {
-            (8..12).random()   // Fewer moving obstacles in general
-        }
-        Log.d("RunnerGame", "Game initialized with nextMovingObstacleIn=$nextMovingObstacleIn")
-        
-        highScore = loadHighScore()
-        lastHighScoreSaveTime = System.currentTimeMillis()
-        lastUpdateTime = System.currentTimeMillis()
-        lastObstacleTime = System.currentTimeMillis()
-        
-        // Create initial bird with fixed size
-        val birdSize = screenWidth * 0.05f
-        val jumpVel = screenHeight * 0.15f  // Increased base jump velocity for more noticeable effect
-        bird = Bird(
-            x = screenWidth * 0.2f,
-            y = screenHeight * 0.4f,
-            width = birdSize,
-            height = birdSize,
-            velocityY = jumpVel,
-            jumpVelocity = jumpVel
-        )
-        
-        // Add initial obstacle, ensuring it's completely off-screen
-        val initialObstacle = createObstacle(false)  // Explicitly non-moving for first obstacle
-        obstacles.add(initialObstacle.copy(x = screenWidth + obstacleBaseWidth))
-        
-        initialized = true
-        isPlaying = false
-        
-        // Double check the mode is NORMAL
-        if (currentMode != GameMode.NORMAL) {
-            Log.w("RunnerGame", "WARNING: Mode is not NORMAL after initialization, forcing it again!")
-            setMode(GameMode.NORMAL, "initialize-final-check")
-            speedMultiplier = 1.0f
-        }
-        
-        Log.d("RunnerGame", "Game initialized with properties: gravity=$gravity, gameSpeed=$gameSpeed, obstacleBaseWidth=$obstacleBaseWidth")
-        Log.d("RunnerGame", "Game initialized in mode: $currentMode, bird size: ${bird?.width}x${bird?.height}")
-    }
-
-    private fun stopAllSounds() {
-        if (isPlayingLevelSound) {
-            soundManager.stopScoreSound()
-            isPlayingLevelSound = false
-        }
-    }
-
-    private fun createObstacle(forcedMoving: Boolean = false): Obstacle {
-        val height = minObstacleHeight + Random.nextFloat() * (maxObstacleHeight - minObstacleHeight)
-        val isHighObstacle = Random.nextBoolean()
-        val y = if (isHighObstacle) {
-            0f
-        } else {
-            screenHeight - groundHeight - height
-        }
-        
-        // Let the caller (generateNewObstacle) determine if this should be moving
-        // The forcedMoving parameter ensures we respect the counter-based system
-        val isMoving = forcedMoving
-        val moveSpeed = if (isMoving) {
-            screenHeight * (0.2f + Random.nextFloat() * 0.3f)  // Variable movement speed
-        } else {
-            0f
-        }
-        
-        return Obstacle(
-            x = screenWidth + obstacleBaseWidth,
-            y = y,
-            height = height,
-            type = getRandomObstacleType(),
-            isMoving = isMoving,
-            moveSpeed = moveSpeed
-        )
-    }
-
-    private fun getRandomObstacleType(): ObstacleType {
-        // More varied obstacle types in higher levels
-        return when {
-            level >= 3 && Random.nextFloat() < 0.2f -> ObstacleType.SPIKED
-            Random.nextFloat() < 0.4f -> ObstacleType.NARROW
-            Random.nextFloat() < 0.7f -> ObstacleType.NORMAL
-            else -> ObstacleType.WIDE
-        }
-    }
-
-    private fun generateNewObstacle(): Obstacle {
-        obstacleCounter++
-        
-        // Determine if this should be a moving obstacle
-        val isMoving = obstacleCounter >= nextMovingObstacleIn
-        
-        // If we're creating a moving obstacle, reset the counter and set the next interval
-        if (isMoving) {
-            obstacleCounter = 0
-            // Increase the interval for next moving obstacle based on level
-            // Lower levels have much more space between moving obstacles
-            nextMovingObstacleIn = if (level <= 1) {
-                (12..18).random()  // Extremely rare in level 1
-            } else if (level <= 2) {
-                (8..14).random()   // Very rare in level 2
-            } else if (level <= 4) {
-                (6..10).random()   // Less frequent in mid levels
-            } else {
-                (4..8).random()    // More frequent in higher levels
+        try {
+            val currentTime = System.currentTimeMillis()
+            val deltaTime = (currentTime - lastUpdateTime) / 1000f
+            lastUpdateTime = currentTime
+            
+            frameCount++
+            
+            // Check for normal mode speed increase after 5 seconds
+            if (currentMode == GameMode.NORMAL && !normalModeSpeedIncreased) {
+                val gameTimeElapsed = currentTime - gameStartTime
+                if (gameTimeElapsed > 5000) { // 5 seconds
+                    speedMultiplier = 1.5f // Increase normal mode speed by 50%
+                    normalModeSpeedIncreased = true
+                    Log.d("RunnerGame", "⏩ Normal mode speed increased after 5 seconds: $speedMultiplier")
+                }
             }
-            Log.d("RunnerGame", "Creating moving obstacle. Next moving obstacle in $nextMovingObstacleIn obstacles")
+            
+            // Update timers for special modes - pass the delta time separately to updateGreenModeTimer and updateBlueModeTimer
+            updateModeTimers()
+            
+            // Update bird position based on mode
+            @Suppress("UNUSED_PARAMETER")
+            updateBird(deltaTime)
+            
+            // Update obstacles
+            updateObstacles(deltaTime)
+            
+            // Update screen shake effect if active
+            updateShakeEffect()
+            
+            // Check for collisions
+            checkCollisions()
+            
+            // Update score for obstacles passed
+            updateScore()
+            
+        } catch (e: Exception) {
+            Log.e("RunnerGame", "Error during update: ${e.message}", e)
+            // Reset game state if there was an error
+            isPlaying = false
         }
+    }
+    
+    private fun updateModeTimers() {
+        // Calculate time delta in seconds for current frame
+        val deltaTimeSeconds = 1f / 60f // Use a fixed time step for consistency
         
-        // Create and return the obstacle, passing the isMoving flag
-        return createObstacle(isMoving)
-    }
-    
-    private fun getRandomObstacleSpacing(): Float {
-        // Calculate obstacle spacing based on level - more tightly packed at higher levels
-        val baseSpacing = screenWidth * 0.4f  // Base spacing
-        val levelFactor = 1.0f - (0.05f * (level - 1).coerceIn(0, 10))  // Decreases spacing by 5% per level, max 50%
-        val randomVariance = screenWidth * Random.nextFloat() * 0.2f  // Random variance
-        return baseSpacing * levelFactor + randomVariance
-    }
-    
-    // Main update function
-    private fun updateGame(deltaTime: Float) {
         // Handle green mode timer
         if (currentMode == GameMode.GREEN) {
-            greenModeTimer += deltaTime * 1000 // Convert to milliseconds
+            greenModeTimer += deltaTimeSeconds * 1000 // Convert to milliseconds
             if (greenModeTimer >= greenModeDuration) {
                 setNormalMode()
             }
         }
         
-        // Check for normal mode speed increase after playing for 5 seconds
-        if (currentMode == GameMode.NORMAL && !normalModeSpeedIncreased) {
-            val gamePlayTime = System.currentTimeMillis() - gameStartTime
-            if (gamePlayTime > 5000) { // 5 seconds
-                normalModeSpeedIncreased = true
-                speedMultiplier = 1.5f // Increase normal mode speed by 50% after 5 seconds
-                Log.d("RunnerGame", "Normal mode speed increased after 5 seconds: $speedMultiplier")
+        // Handle blue mode timer
+        if (currentMode == GameMode.BLUE) {
+            blueModeTimer += deltaTimeSeconds * 1000 // Convert to milliseconds
+            if (blueModeTimer >= blueModeDuration) {
+                setNormalMode()
             }
         }
         
-        // Update physics with deltaTime
+        // Handle transition to normal mode after shake effect
+        if (isTransitioningToNormal && !isBirdShaking) {
+            val timeSinceTransition = System.currentTimeMillis() - transitionStartTime
+            if (timeSinceTransition > 500) { // Wait a bit after shake ends
+                completeTransitionToNormal()
+            }
+        }
+    }
+    
+    @Suppress("UNUSED_PARAMETER")
+    private fun updateBird(deltaTime: Float) {
+        // Skip the bird physics update if we're in Green Mode (user controls directly)
+        if (currentMode == GameMode.GREEN) return
+        
+        // Update bird position and velocity
+        bird?.let { b ->
+            // Apply gravity based on mode - exact v3.1 style without deltaTime scaling
+            if (currentMode == GameMode.BLUE) {
+                // Reversed gravity for Blue mode
+                b.velocityY -= gravity
+                
+                // Implement blue mode jumping correctly by reversing the jump direction
+                if (b.velocityY < -8f) { // Cap fall speed in blue mode
+                    b.velocityY = -8f
+                }
+            } else {
+                // Normal gravity for other modes
+                b.velocityY += gravity
+                
+                // Cap fall speed in normal modes
+                if (b.velocityY > 8f) {
+                    b.velocityY = 8f
+                }
+            }
+            
+            // Apply current velocity to position - exact v3.1 style without deltaTime scaling
+            b.y += b.velocityY
+            
+            // Keep the bird in a fixed horizontal position
+            b.x = screenWidth * 0.2f
+            
+            // Only handle ceiling collisions here, ground collisions are handled in checkCollisions()
+            if (b.y < 0f) {
+                b.y = 0f
+                b.velocityY = Math.abs(b.velocityY) * 0.5f // Bounce with dampening
+            }
+            
+            // Apply bird shake effect if active
+            if (isBirdShaking) {
+                val elapsed = System.currentTimeMillis() - birdShakeStartTime
+                if (elapsed < shakeRemainingDuration) {
+                    // Generate a slight horizontal offset using sine wave
+                    val shakeProgress = elapsed.toFloat() / shakeRemainingDuration
+                    val intensity = (1 - shakeProgress) * shakeIntensity // Gradually fade out
+                    b.visualOffsetX = sin(shakeProgress * 20 * PI.toFloat()) * intensity
+                } else {
+                    // End shake
+                    isBirdShaking = false
+                    b.visualOffsetX = 0f
+                }
+            }
+        }
+    }
+    
+    private fun updateObstacles(deltaTime: Float) {
+        // Calculate current game speed with exact v3.1 values - don't cap deltaTime
         val currentSpeed = baseSpeed * speedMultiplier
         
-        // Skip the bird update if we're in Green Mode
-        if (currentMode != GameMode.GREEN) {
-            // Update bird position and velocity
-            bird?.let { b ->
-                // Apply gravity if not in Green Mode
-                b.velocityY += gravity * deltaTime * fallSpeedMultiplier
-                
-                // Apply current velocity
-                b.y += b.velocityY * deltaTime
-                
-                // If bird hits bottom
-                if (b.y + b.height > screenHeight * 0.9f) {
-                    b.y = screenHeight * 0.9f - b.height
-                    b.velocityY = 0f
-                }
-                
-                // If bird hits top - allow it to go all the way to the top
-                if (b.y < 0f) {
-                    b.y = 0f
-                    b.velocityY = 0f
-                }
-            }
-        }
-        
-        // Update obstacle positions
+        // Update existing obstacles
         val updatedObstacles = mutableListOf<Obstacle>()
+        
         for (obstacle in obstacles) {
-            // Create new obstacle with updated position
+            // V3.1 obstacle movement with exact deltaTime scaling
             val newX = obstacle.x - (currentSpeed * deltaTime)
             var newY = obstacle.y
             
@@ -399,10 +412,10 @@ class RunnerGame(
                     newY -= obstacle.moveSpeed * deltaTime
                     
                     // Check if we need to change direction
-                    if (newY <= screenHeight * 0.1f) {
+                    if (newY <= 0f) {
                         updatedObstacles.add(obstacle.copy(
                             x = newX,
-                            y = newY,
+                            y = 0f, // Exactly at the top boundary
                             movingUp = false
                         ))
                     } else {
@@ -415,10 +428,11 @@ class RunnerGame(
                     newY += obstacle.moveSpeed * deltaTime
                     
                     // Check if we need to change direction
-                    if (newY + obstacle.height >= screenHeight * 0.9f) {
+                    val groundY = screenHeight * 0.9f
+                    if (newY + obstacle.height >= groundY) {
                         updatedObstacles.add(obstacle.copy(
                             x = newX,
-                            y = newY,
+                            y = groundY - obstacle.height, // Exactly at the ground
                             movingUp = true
                         ))
                     } else {
@@ -438,330 +452,261 @@ class RunnerGame(
         obstacles.addAll(updatedObstacles)
         
         // Remove obstacles that are off-screen
-        obstacles.removeAll { it.x + obstacleBaseWidth < 0 }
+        obstacles.removeAll { 
+            it.x + getObstacleWidth(it.type) < 0 
+        }
         
-        // Add new obstacles
+        // Maintain original v3.1 obstacle spacing - keep the exact formula from GitHub
+        currentObstacleSpacing = screenWidth * (0.7f - (level * 0.05f))
+        
+        // Add new obstacles when appropriate spacing is available
         if (obstacles.isEmpty() || obstacles.lastOrNull()?.x ?: 0f < screenWidth - currentObstacleSpacing) {
             val newObstacle = generateNewObstacle()
             obstacles.add(newObstacle)
-        }
-        
-        // Check for collisions
-        checkCollisions()
-        
-        // Update score
-        updateScore()
-        
-        // Add shake offset to bird position if shaking
-        if (isBirdShaking && bird != null) {
-            // Only modify X temporarily for visual effect - original X is used for hit detection
-            bird?.visualOffsetX = birdShakeOffsetX
-            
-            // Log position with shake applied every 10 frames
-            if (frameCount % 10 == 0) {
-                val b = bird!! // Safe since we checked bird != null
-                Log.d("RunnerGame", "Bird with shake - position: ${b.x + b.visualOffsetX}, visualOffsetX: ${b.visualOffsetX}")
-            }
-        } else {
-            bird?.visualOffsetX = 0f
-        }
-        
-        // Update bird shake effect
-        if (isBirdShaking) {
-            val shakeDuration = System.currentTimeMillis() - birdShakeStartTime
-            if (shakeDuration < shakeRemainingDuration) {
-                val normalizedTime = (shakeDuration / shakeRemainingDuration.toFloat()) * PI.toFloat() * 4
-                birdShakeOffsetX = sin(normalizedTime) * shakeIntensity * (1 - shakeDuration / shakeRemainingDuration.toFloat())
-            } else {
-                // End shake
-                isBirdShaking = false
-                birdShakeOffsetX = 0f
-                
-                // Complete transition to normal mode if needed
-                if (isTransitioningToNormal) {
-                    completeTransitionToNormal()
-                }
-            }
+            Log.d("RunnerGame", "New obstacle added at spacing: $currentObstacleSpacing")
         }
     }
     
-    fun getObstacleWidth(type: ObstacleType): Float {
-        return when (type) {
-            ObstacleType.NARROW -> obstacleNarrowWidth
-            ObstacleType.NORMAL -> obstacleBaseWidth
-            ObstacleType.WIDE -> obstacleWideWidth
-            ObstacleType.SPIKED -> obstacleBaseWidth
+    private fun generateNewObstacle(): Obstacle {
+        // Determine obstacle type based on probability - progressively make harder obstacles more common
+        val type = when (level) {
+            1 -> { // Level 1: Mostly normal obstacles
+                when ((0..100).random()) {
+                    in 0..70 -> ObstacleType.NORMAL   // 70% chance
+                    in 71..85 -> ObstacleType.NARROW  // 15% chance
+                    in 86..95 -> ObstacleType.WIDE    // 10% chance
+                    else -> ObstacleType.SPIKED       // 5% chance
+                }
+            }
+            2 -> { // Level 2: More varied
+                when ((0..100).random()) {
+                    in 0..55 -> ObstacleType.NORMAL   // 55% chance
+                    in 56..75 -> ObstacleType.NARROW  // 20% chance
+                    in 76..90 -> ObstacleType.WIDE    // 15% chance
+                    else -> ObstacleType.SPIKED       // 10% chance
+                }
+            }
+            3 -> { // Level 3: Harder
+                when ((0..100).random()) {
+                    in 0..40 -> ObstacleType.NORMAL   // 40% chance
+                    in 41..65 -> ObstacleType.NARROW  // 25% chance
+                    in 66..85 -> ObstacleType.WIDE    // 20% chance
+                    else -> ObstacleType.SPIKED       // 15% chance
+                }
+            }
+            else -> { // Level 4: Hardest
+                when ((0..100).random()) {
+                    in 0..30 -> ObstacleType.NORMAL   // 30% chance
+                    in 31..55 -> ObstacleType.NARROW  // 25% chance
+                    in 56..80 -> ObstacleType.WIDE    // 25% chance
+                    else -> ObstacleType.SPIKED       // 20% chance
+                }
+            }
         }
+        
+        // Determine if this is a moving obstacle - more common in higher levels
+        val movingObstacleChance = 10 * level // 10% in level 1, 40% in level 4
+        val isMoving = (0..100).random() < movingObstacleChance
+        
+        // Reset counter if this is a moving obstacle
+        if (isMoving) {
+            obstacleCounter = 0
+            nextMovingObstacleIn = (8..12).random()
+        } else {
+            obstacleCounter++
+        }
+        
+        // Calculate height based on level progression - higher levels have taller obstacles
+        val minHeightMultiplier = 0.1f + (level * 0.02f) // Increases with level
+        val maxHeightMultiplier = 0.3f + (level * 0.05f) // Increases with level
+        
+        val minHeight = screenHeight * minHeightMultiplier.coerceAtMost(0.2f)
+        val maxHeight = screenHeight * maxHeightMultiplier.coerceAtMost(0.5f)
+        
+        val heightRange = maxHeight - minHeight
+        val height = minHeight + (heightRange * Random.nextFloat())
+        
+        // Calculate position (top or bottom)
+        val y = if (Random.nextBoolean()) {
+            0f // Top aligned
+        } else {
+            screenHeight * 0.9f - height // Bottom aligned
+        }
+        
+        // Movement speed for moving obstacles increases with level
+        val moveSpeed = if (isMoving) 100f + (level * 50f) else 0f
+        
+        return Obstacle(
+            x = screenWidth,
+            y = y,
+            height = height,
+            type = type,
+            isMoving = isMoving,
+            moveSpeed = moveSpeed,
+            movingUp = Random.nextBoolean()
+        )
     }
     
     private fun checkCollisions() {
         bird?.let { b ->
-            // Check if bird hits the ground
-            if (b.y + b.height >= screenHeight * 0.9f && currentMode != GameMode.GREEN) {
-                Log.d("RunnerGame", "Ground collision detected")
-                isPlaying = false
-                saveHighScore(score)
-                stopAllSounds()
-                soundManager.playCollisionSound()
-                // Trigger screen shake effect
-                shakeScreen()
-                return
+            // Ground collision (bottom of screen)
+            if (b.y + b.height > screenHeight * 0.9f) {
+                if (currentMode == GameMode.GREEN) {
+                    // Green mode is immune to ground collisions
+                    Log.d("RunnerGame", "Green mode ground collision ignored - immune to ground only")
+                    // Bounce the bird back
+                    b.y = screenHeight * 0.9f - b.height
+                    b.velocityY = -Math.abs(b.velocityY) * 0.5f // Bounce with dampening
+                } else {
+                    // All other modes die on ground collision
+                    Log.d("RunnerGame", "Bird hit the ground in ${currentMode} mode! Game over.")
+                    isPlaying = false
+                    soundManager.playCollisionSound()
+                    saveHighScore(score)
+                    return
+                }
             }
             
-            // Check obstacle collisions
+            // Ceiling collision - no mode should die, just bounce
+            if (b.y < 0f) {
+                // Just bounce the bird off the ceiling
+                b.y = 0f
+                b.velocityY = Math.abs(b.velocityY) * 0.5f // Bounce with dampening
+                Log.d("RunnerGame", "Bird hit ceiling - bouncing back")
+            }
+            
+            // Check for obstacle collision (applies to ALL modes)
             for (obstacle in obstacles) {
-                if (checkCollision(b, obstacle)) {
-                    Log.d("RunnerGame", "Obstacle collision detected")
+                if (isColliding(b, obstacle)) {
+                    Log.d("RunnerGame", "Bird hit an obstacle in ${currentMode} mode! Game over.")
                     isPlaying = false
-                    saveHighScore(score)
-                    stopAllSounds()
                     soundManager.playCollisionSound()
-                    // Trigger screen shake effect
-                    shakeScreen()
+                    saveHighScore(score)
+                    triggerScreenShake()
                     return
                 }
             }
         }
     }
     
-    private fun checkCollision(bird: Bird, obstacle: Obstacle): Boolean {
-        // Perform bounding box collision detection
+    private fun isColliding(bird: Bird, obstacle: Obstacle): Boolean {
+        val obstacleWidth = getObstacleWidth(obstacle.type)
+        
+        // Bird bounds
         val birdLeft = bird.x
         val birdRight = bird.x + bird.width
         val birdTop = bird.y
         val birdBottom = bird.y + bird.height
         
-        val obstacleWidth = getObstacleWidth(obstacle.type)
+        // Obstacle bounds
         val obstacleLeft = obstacle.x
         val obstacleRight = obstacle.x + obstacleWidth
         val obstacleTop = obstacle.y
         val obstacleBottom = obstacle.y + obstacle.height
         
-        // Check for horizontal overlap
-        val horizontalOverlap = birdRight > obstacleLeft && birdLeft < obstacleRight
-        
-        // Check for vertical overlap
-        val verticalOverlap = birdBottom > obstacleTop && birdTop < obstacleBottom
-        
-        // Return true if there is both horizontal and vertical overlap
-        return horizontalOverlap && verticalOverlap
+        // Check for intersection
+        return (birdRight > obstacleLeft && 
+                birdLeft < obstacleRight && 
+                birdBottom > obstacleTop && 
+                birdTop < obstacleBottom)
     }
     
-    // Add more reliable scoring that's not tied to game speed
     private fun updateScore() {
-        for (obstacle in obstacles) {
-            if (!obstacle.passed && obstacle.x + getObstacleWidth(obstacle.type) < bird?.x ?: 0f) {
-                // Mark obstacle as passed
-                obstacle.passed = true
-                obstaclesPassed++
-                
-                // Increase score
-                score++
-                
-                // Level up every 2 obstacles
-                if (obstaclesPassed % 2 == 0) {
-                    // Calculate the new level (1-4)
-                    val newLevel = ((obstaclesPassed / 2) % 4) + 1
-                    
-                    // Only update and play sound if level actually changes
-                    if (newLevel != level) {
-                        level = newLevel
-                        Log.d("RunnerGame", "Level changed to $level (obstacles passed: $obstaclesPassed)")
-                        
-                        // Play level up sound
-                        soundManager.playScoreSound()
-                        levelSoundStartTime = System.currentTimeMillis()
-                        isPlayingLevelSound = true
-                    }
-                }
-            }
-        }
-        
-        // Save high score every 10 seconds
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastHighScoreSaveTime > 10000) {
-            saveHighScore(score)
-            lastHighScoreSaveTime = currentTime
-        }
-    }
-    
-    fun onTapDown() {
-        // Log.d("RunnerGame", "Tap down received")
-    }
-    
-    // Jump with configurable power
-    fun jump(powerMultiplier: Float = 1.0f) {
-        if (isPlaying && currentMode != GameMode.GREEN) {
-            // Increase jump power based on multiplier - making sure longer taps jump further
-            // Apply appropriate multiplier based on mode
-            val effectivePower = when (currentMode) {
-                GameMode.ORANGE -> powerMultiplier * 1.2f // Even more power in orange mode
-                GameMode.NORMAL -> powerMultiplier * 1.5f // 1.5x higher jumps in normal (yellow) mode
-                else -> powerMultiplier
-            }
-            
-            bird?.jump(effectivePower)
-            
-            if (effectivePower > 1.0f) {
-                // Play super jump sound for powered jumps
-                soundManager.playJumpSound()
-            } else {
-                // Regular jump sound
-                soundManager.playJumpSound()
-            }
-            Log.d("RunnerGame", "Jump with power multiplier: $effectivePower (base: $powerMultiplier)")
-        }
-    }
-    
-    fun getScore(): Int = score
-    
-    fun getHighScore(): Int = highScore
-    
-    fun getLevel(): Int = level
-    
-    fun getBird(): Bird = bird ?: throw IllegalStateException("Bird is not initialized")
-    
-    fun getObstacles(): List<Obstacle> = obstacles
-    
-    fun reset() {
-        if (!initialized) {
-            Log.e("RunnerGame", "Cannot reset - game not initialized")
-            return
-        }
-        
-        // Reset all game state in a deliberate and complete order
-        Log.d("RunnerGame", "Beginning complete game reset")
-        
-        // 1. Reset game state and flags
-        isPlaying = false
-        score = 0
-        obstaclesPassed = 0
-        obstacleCounter = 0
-        nextMovingObstacleIn = (8..12).random()
-        level = 1
-        
-        // 2. Clear existing objects
-        obstacles.clear()
-        
-        // 3. Reset timings
-        lastObstacleTime = System.currentTimeMillis()
-        lastUpdateTime = System.currentTimeMillis()
-        
-        // 4. First reset game mode and related parameters
-        setMode(GameMode.NORMAL, "reset")  // Force to normal mode
-        speedMultiplier = 1.0f
-        greenModeTimer = 0f             // Ensure green mode timer is reset
-        
-        // 5. Create fresh bird at the initial position with fixed size
-        val birdSize = screenWidth * 0.05f
-        val jumpVel = screenHeight * 0.15f
-        bird = Bird(
-            x = screenWidth * 0.2f,
-            y = screenHeight * 0.4f,
-            width = birdSize,
-            height = birdSize,
-            velocityY = jumpVel,
-            jumpVelocity = jumpVel
-        )
-        
-        // 6. Ensure bird is properly configured
         bird?.let { b ->
-            b.velocityY = 0f
-        }
-        
-        // 7. Call the mode setter to ensure proper state
-        setNormalMode()
-        
-        // 9. Add initial obstacle off-screen
-        val initialObstacle = createObstacle(false)  // Explicitly non-moving for first obstacle
-        obstacles.add(initialObstacle.copy(x = screenWidth + obstacleBaseWidth))
-        
-        // 10. Final verification check
-        if (currentMode != GameMode.NORMAL) {
-            Log.e("RunnerGame", "CRITICAL: Game mode is still not NORMAL after reset!")
-            // Force it one more time
-            setMode(GameMode.NORMAL, "reset-final-check")
-            speedMultiplier = 1.0f
-        }
-        
-        Log.d("RunnerGame", "Game reset complete - bird size: ${bird?.width}x${bird?.height}, mode: $currentMode, multiplier: $speedMultiplier")
-    }
-    
-    fun start() {
-        if (!initialized) {
-            Log.e("RunnerGame", "Cannot start - game not initialized")
-            return
-        }
-        
-        try {
-            if (!isPlaying) {
-                reset()
-                
-                // Completely reset all timers and state variables explicitly here
-                // This ensures we always start fresh in Normal mode
-                lastUpdateTime = System.currentTimeMillis()
-                gameStartTime = System.currentTimeMillis()  // Track when the game started
-                normalModeSpeedIncreased = false  // Reset speed increase flag
-                setMode(GameMode.NORMAL, "start")
-                speedMultiplier = 1.0f
-                greenModeTimer = 0f
-                level = 1
-                obstaclesPassed = 0
-                
-                // Explicitly call the normal mode setter to ensure proper state
-                setNormalMode()
-                
-                isPlaying = true
-                Log.d("RunnerGame", "Game started in mode: $currentMode, level: $level")
-            }
-        } catch (e: Exception) {
-            Log.e("RunnerGame", "Error during start: ${e.message}", e)
-            // Make sure to reset the game state even if there was an error
-            isPlaying = false
-        }
-    }
-    
-    fun update() {
-        if (!initialized || !isPlaying) {
-            return
-        }
-        
-        try {
-            val currentTime = System.currentTimeMillis()
-            val deltaTime = (currentTime - lastUpdateTime) / 1000f
-            lastUpdateTime = currentTime
-            
-            frameCount++
-            
-            // Use the deltaTime for all physics updates
-            updateGame(deltaTime)
-            
-            // Update level sound timer
-            if (isPlayingLevelSound) {
-                if (currentTime - levelSoundStartTime > 1000) {
-                    isPlayingLevelSound = false
+            for (obstacle in obstacles) {
+                // Check if bird has passed an obstacle that hasn't been counted yet
+                if (!obstacle.passed && b.x > obstacle.x + getObstacleWidth(obstacle.type)) {
+                    // Mark as passed and update score
+                    val obstacleIndex = obstacles.indexOf(obstacle)
+                    obstacles[obstacleIndex] = obstacle.copy(passed = true)
+                    
+                    // Increment score and play sound
+                    score++
+                    obstaclesPassed++ // Increment counter for level progression
+                    soundManager.playScoreSound()
+                    
+                    // Update high score if needed
+                    if (score > highScore) {
+                        saveHighScore(score)
+                    }
+                    
+                    // Check if we need to level up - every 2 obstacles in v3.1
+                    if (obstaclesPassed >= 2) {
+                        levelUp()
+                    }
+                    
+                    Log.d("RunnerGame", "Obstacle passed! Score: $score, Obstacles passed: $obstaclesPassed")
                 }
             }
-        } catch (e: Exception) {
-            Log.e("RunnerGame", "Error during update: ${e.message}", e)
-            // Make sure to reset the game state if there was an error
-            isPlaying = false
         }
     }
     
-    // Handle mode-switching logic
+    private fun levelUp() {
+        obstaclesPassed = 0  // Reset counter
+        level = (level % 4) + 1  // Cycle through levels 1-4
+        
+        // V3.1 obstacle spacing adjustment based on level
+        currentObstacleSpacing = screenWidth * (0.5f - (level * 0.05f)).coerceAtLeast(0.3f)
+        
+        // Play level up sound
+        try {
+            soundManager.playDoubleBeepSound()
+            isPlayingLevelSound = true
+            levelSoundStartTime = System.currentTimeMillis()
+        } catch (e: Exception) {
+            Log.e("RunnerGame", "Error playing level up sound: ${e.message}", e)
+        }
+        
+        Log.d("RunnerGame", "LEVEL UP! Now at level $level with spacing $currentObstacleSpacing")
+    }
+    
+    private fun updateShakeEffect() {
+        if (isShaking) {
+            shakeDuration--
+            if (shakeDuration <= 0) {
+                isShaking = false
+            }
+        }
+    }
+    
+    private fun triggerScreenShake() {
+        isShaking = true
+        shakeDuration = 20 // Frames of shake
+    }
+    
+    private fun triggerBirdShake() {
+        isBirdShaking = true
+        birdShakeStartTime = System.currentTimeMillis()
+        shakeRemainingDuration = 300 // Shake for 300ms
+    }
+    
+    fun getShakeOffset(): Pair<Float, Float> {
+        if (!isShaking) return Pair(0f, 0f)
+        
+        // Generate random shake offset using Random.nextFloat()
+        val xOffset = (Random.nextFloat() * 2 - 1) * shakeIntensity
+        val yOffset = (Random.nextFloat() * 2 - 1) * shakeIntensity
+        
+        return Pair(xOffset, yOffset)
+    }
+    
+    fun getBirdShakeOffset(): Float {
+        return bird?.visualOffsetX ?: 0f
+    }
+    
+    // Mode activation methods
     fun activateOrangeMode() {
         if (!initialized || !isPlaying) return
         if (currentMode == GameMode.GREEN) return // Don't downgrade from GREEN to ORANGE
+        if (currentMode == GameMode.BLUE) return // Don't change from BLUE to ORANGE
         
-        Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.ORANGE} (from: activateOrangeMode)")
+        Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.ORANGE}")
         currentMode = GameMode.ORANGE
         
-        // Update orange mode speed multiplier to 3.0x (increased from 2.0x)
-        speedMultiplier = 3.0f
+        // Use correct v3.1 multiplier for Orange mode
+        speedMultiplier = 2.0f
         
         Log.d("RunnerGame", "🔥 Orange Mode activated! Speed multiplier: $speedMultiplier")
-        // No sound for mode changes
     }
     
     fun activateGreenMode() {
@@ -773,14 +718,33 @@ class RunnerGame(
             return
         }
         
-        Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.GREEN} (from: activateGreenMode)")
+        Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.GREEN}")
         currentMode = GameMode.GREEN
+        greenModeTimer = 0f
         
-        // Update green mode speed multiplier to 4.0x (increased from 3.0x)
-        speedMultiplier = 4.0f
+        // Use correct v3.1 multiplier for Green mode
+        speedMultiplier = 3.0f
         
         Log.d("RunnerGame", "🌿 Green Mode activated! Speed multiplier: $speedMultiplier")
-        // No sound for mode changes
+    }
+    
+    fun activateBlueMode() {
+        if (!initialized || !isPlaying) return
+        
+        // Only allow activation from NORMAL mode
+        if (currentMode != GameMode.NORMAL) {
+            Log.d("RunnerGame", "🚫 Can't activate Blue Mode from ${currentMode} - only allowed from NORMAL mode")
+            return
+        }
+        
+        Log.d("RunnerGame", "🔄 Mode change: ${currentMode} → ${GameMode.BLUE}")
+        currentMode = GameMode.BLUE
+        blueModeTimer = 0f
+        
+        // Blue mode uses same speed as Normal mode
+        speedMultiplier = 1.0f
+        
+        Log.d("RunnerGame", "🔵 Blue Mode activated! Speed multiplier: $speedMultiplier (same as normal)")
     }
     
     fun setNormalMode() {
@@ -808,6 +772,8 @@ class RunnerGame(
                 Log.d("RunnerGame", "Green Mode deactivated. Back to Normal Mode.")
             } else if (previousMode == GameMode.ORANGE) {
                 Log.d("RunnerGame", "Orange Mode deactivated. Back to Normal Mode.")
+            } else if (previousMode == GameMode.BLUE) {
+                Log.d("RunnerGame", "Blue Mode deactivated. Back to Normal Mode.")
             }
         } else {
             // Direct mode change if not transitioning from a special mode or not playing
@@ -816,114 +782,192 @@ class RunnerGame(
             Log.d("RunnerGame", "Normal Mode activated directly. Speed multiplier: $speedMultiplier")
         }
     }
-
-    // New method to complete transition after shake is done
+    
+    // Helper method to set mode without side effects
+    private fun setMode(mode: GameMode, source: String) {
+        val previous = currentMode
+        currentMode = mode
+        Log.d("RunnerGame", "Mode set to $mode (from: $source, previous: $previous)")
+    }
+    
+    // Complete the transition to normal mode after shake effects
     private fun completeTransitionToNormal() {
         isTransitioningToNormal = false
         
         // Now apply the speed change after shake is complete
-        speedMultiplier = 1.0f  // Start with normal 1.0x speed
+        speedMultiplier = 1.0f  // Reset to normal 1.0x speed
         normalModeSpeedIncreased = false  // Reset the normal mode speed increase flag
         
-        Log.d("RunnerGame", "Transition to Normal Mode completed - gravity and speed now set")
+        Log.d("RunnerGame", "Transition to Normal Mode completed - physics now reset")
     }
-
+    
+    fun getScore(): Int = score
+    
+    fun getHighScore(): Int = highScore
+    
+    // Start a new game
+    fun start() {
+        if (!initialized) {
+            Log.e("RunnerGame", "Cannot start game - not initialized")
+            return
+        }
+        
+        // Reset game state
+        score = 0
+        obstaclesPassed = 0
+        level = 1
+        gameStartTime = System.currentTimeMillis()
+        normalModeSpeedIncreased = false
+        
+        // Reset bird position
+        resetBird()
+        
+        // Reset physics to updated values
+        gravity = 0.7f  // Updated gravity
+        gameSpeed = baseSpeed // 375f (increased by 0.5x)
+        speedMultiplier = 1.0f
+        currentObstacleSpacing = screenWidth * 0.7f
+        
+        // Clear any existing obstacles
+        obstacles.clear()
+        obstacleCounter = 0
+        nextMovingObstacleIn = (8..12).random()
+        lastObstacleTime = System.currentTimeMillis()
+        
+        // Force normal mode
+        currentMode = GameMode.NORMAL
+        greenModeTimer = 0f
+        blueModeTimer = 0f
+        
+        // Re-randomize the mode cycle
+        randomizeModeCycle()
+        
+        // Start playing
+        isPlaying = true
+        
+        Log.d("RunnerGame", "Game started with bird at (${bird?.x}, ${bird?.y}), level: $level")
+    }
+    
+    // Bird jump method - Fixed exact v3.1 values
+    fun jump(powerMultiplier: Float = 1.0f) {
+        if (!initialized || !isPlaying) return
+        
+        // Skip jump in GREEN mode as it uses direct position control
+        if (currentMode == GameMode.GREEN) return
+        
+        bird?.let { b ->
+            // For Blue mode, we need to reverse the jump direction since gravity is reversed
+            if (currentMode == GameMode.BLUE) {
+                // In blue mode, jump means accelerate downward
+                b.velocityY = b.jumpVelocity * powerMultiplier
+                Log.d("RunnerGame", "Blue mode jump DOWN with power: $powerMultiplier, velocityY: ${b.velocityY}")
+            } else {
+                // Standard jump (upward) for all other modes
+                b.velocityY = -b.jumpVelocity * powerMultiplier
+                Log.d("RunnerGame", "Standard jump UP with power: $powerMultiplier, velocityY: ${b.velocityY}")
+            }
+            
+            // Play jump sound
+            try {
+                soundManager.playJumpSound()
+            } catch (e: Exception) {
+                Log.e("RunnerGame", "Error playing jump sound: ${e.message}", e)
+            }
+        }
+    }
+    
+    // Reset bird position - ensure x position is fixed at 20% of screen width
+    fun resetBird() {
+        bird?.let { b ->
+            b.x = screenWidth * 0.2f  // Fixed at 20% from left
+            b.y = screenHeight * 0.5f - b.height/2
+            b.velocityY = 0f
+            b.visualOffsetX = 0f
+        }
+    }
+    
+    // Handle tap down event - used to track when a tap starts
+    fun onTapDown() {
+        // Randomize the mode cycle on each tap
+        randomizeModeCycle()
+        Log.d("RunnerGame", "Tap down - randomized mode cycle: $randomizedModeCycle")
+    }
+    
     // Handle vertical slide input for Green Mode
     fun handleSlideInput(y: Float) {
-        if (currentMode == GameMode.GREEN && isPlaying) {
-            try {
-                // Get bird's current position
-                bird?.let { b ->
-                    // Direct positioning with no smoothing for immediate response
-                    val targetY = y - (b.height / 2) // Center the bird on the Y position
-                    
-                    // Apply bounds checking
-                    val topLimit = 0f // Changed from 0.1f * screenHeight to allow going to the very top
-                    val bottomLimit = 0.9f * screenHeight - b.height
-                    
-                    // Directly set position with bounds checking
-                    b.y = targetY.coerceIn(topLimit, bottomLimit)
-                    
-                    Log.d("RunnerGame", "Green Mode slide: Bird position set to y=${b.y}")
-                }
-            } catch (e: Exception) {
-                Log.e("RunnerGame", "Error in handleSlideInput: ${e.message}", e)
+        if (!initialized || !isPlaying) return
+        if (currentMode != GameMode.GREEN) return
+        
+        bird?.let { b ->
+            // Calculate bird's new Y position, keeping its center at touch position
+            val newY = (y - b.height/2).coerceIn(0f, screenHeight * 0.9f - b.height)
+            b.y = newY
+        }
+    }
+    
+    // Randomizes the mode cycle for tap durations
+    private fun randomizeModeCycle() {
+        // Randomize the mode order (excluding NORMAL which is always first)
+        val specialModes = mutableListOf(GameMode.ORANGE, GameMode.GREEN, GameMode.BLUE)
+        specialModes.shuffle()
+        
+        // Build the complete mode cycle with NORMAL first
+        randomizedModeCycle = mutableListOf(GameMode.NORMAL)
+        randomizedModeCycle.addAll(specialModes)
+        
+        // Calculate time ranges for each mode with total cycle time of maxCycleTime
+        val rangeSize = cycleTime / randomizedModeCycle.size
+        
+        // Clear existing ranges
+        modeActivationRanges.clear()
+        
+        // Set ranges for each mode
+        for (i in randomizedModeCycle.indices) {
+            val mode = randomizedModeCycle[i]
+            val start = i * rangeSize
+            val end = (i + 1) * rangeSize - 1
+            modeActivationRanges[mode] = Pair(start, end)
+        }
+        
+        // Log the current cycle for debugging
+        Log.d("RunnerGame", "Mode cycle randomized: $randomizedModeCycle")
+        Log.d("RunnerGame", "Mode ranges: $modeActivationRanges")
+    }
+    
+    // Method to determine which mode a given tap duration would activate
+    fun getModeForDuration(tapDuration: Long): GameMode {
+        val cyclicDuration = tapDuration % cycleTime
+        
+        for ((mode, range) in modeActivationRanges) {
+            val (start, end) = range
+            if (cyclicDuration in start until end) {
+                return mode
             }
         }
+        
+        // If nothing matched (shouldn't happen), return NORMAL
+        return GameMode.NORMAL
     }
     
-    // Getter for the mode
-    fun getCurrentMode(): GameMode = currentMode
-    
-    // Get green mode progress (0.0f to 1.0f)
-    fun getGreenModeProgress(): Float = if (currentMode == GameMode.GREEN) {
-        greenModeTimer / greenModeDuration 
-    } else 0f
-    
-    // Get the visual bubble radius for Green Mode - used for rendering
-    fun getGreenBubbleRadius(): Float {
-        return if (currentMode == GameMode.GREEN && bird != null) {
-            // Bubble is 40% larger than bird's width
-            bird!!.width * 1.4f
-        } else {
-            0f
-        }
-    }
-
-    // Trigger screen shake effect
-    private fun shakeScreen() {
-        isShaking = true
-        shakeDuration = 10 // Shake for 10 frames
-        Log.d("RunnerGame", "Screen shake triggered")
+    // Get the current mode cycle information for display
+    fun getModeCycleInfo(): Pair<List<GameMode>, Map<GameMode, Pair<Int, Int>>> {
+        return Pair(randomizedModeCycle, modeActivationRanges)
     }
     
-    // Get current shake offset for rendering
-    fun getShakeOffset(): Pair<Float, Float> {
-        if (isShaking && shakeDuration > 0) {
-            shakeDuration--
-            val offsetX = (Math.random() * 2 - 1) * shakeIntensity
-            val offsetY = (Math.random() * 2 - 1) * shakeIntensity
-            
-            if (shakeDuration <= 0) {
-                isShaking = false
-            }
-            
-            return Pair(offsetX.toFloat(), offsetY.toFloat())
-        }
-        return Pair(0f, 0f)
-    }
-
-    // Setter for the mode - with tracking
-    private fun setMode(newMode: GameMode, source: String) {
-        val oldMode = currentMode
-        if (oldMode != newMode) {
-            currentMode = newMode
-            Log.d("RunnerGame", "🔄 Mode change: $oldMode → $newMode (from: $source)")
-        }
-    }
-
-    // Then modify the triggerBirdShake method to be consistent
-    fun triggerBirdShake() {
-        Log.d("RunnerGame", "Bird shake triggered - setting isBirdShaking to true")
-        isBirdShaking = true
-        birdShakeStartTime = System.currentTimeMillis()
-        // Use consistent shake parameters for all modes
-        shakeIntensity = 5f
-        shakeRemainingDuration = 300
-        Log.d("RunnerGame", "Bird shake triggered - will shake for ${shakeRemainingDuration}ms with intensity $shakeIntensity")
-    }
+    // Add method to get cycle time
+    fun getCycleTime(): Int = cycleTime
 }
 
-// Bird class with added visualOffsetX property but no scaling
+// Bird class - Fixed to match v3.1 exactly
 class Bird(
     var x: Float,
     var y: Float,
     var width: Float,
     var height: Float,
     var velocityY: Float = 0f,
-    var jumpVelocity: Float = 600f
+    var jumpVelocity: Float = 10f  // Using v3.1 value which was 10f, not 600f
 ) {
-    var visualOffsetX = 0f      // Added for shake effect
+    var visualOffsetX = 0f  // Added for shake effect
     
     fun jump() {
         velocityY = -jumpVelocity

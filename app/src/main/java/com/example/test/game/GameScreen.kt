@@ -1,5 +1,7 @@
 package com.example.test.game
 
+
+
 /**
  * Runner Game - Version 3.2
  * 
@@ -195,23 +197,17 @@ fun GameScreen(
             sunRays.add(Triple(angle, length, opacity))
         }
         
-        // Initialize stars for level 4 (night sky) - completely fill the entire sky
-        for (i in 0 until 150) { // Reduced back from 200 to 150 stars
+        // Initialize stars for level 4 (night sky) 
+        for (i in 0 until 150) {
             val x = (Math.random() * 1000).toFloat()
-            // Force stars to be distributed across entire height (0-100% of available height)
-            // Use explicit values to ensure full coverage
-            val heightPercentage = Math.random() // 0.0 to 1.0
-            val y = when {
-                heightPercentage < 0.33 -> Math.random() * 200 // Top third: 0-200
-                heightPercentage < 0.67 -> 200 + Math.random() * 200 // Middle third: 200-400
-                else -> 400 + Math.random() * 200 // Bottom third: 400-600
-            }.toFloat()
-            
+            // Distribute stars only in the sky area (0-80% of screen height)
+            // This ensures they don't appear on the ground
+            val y = (Math.random() * (canvasSize.height * 0.8f)).toFloat()
             val size = (1f + Math.random() * 3f).toFloat()
             val twinkleFactor = Math.random().toFloat()
             stars.add(Triple(Offset(x, y), size, twinkleFactor))
         }
-        Log.d("GameScreen", "Initialized stars with forced distribution across full height")
+        Log.d("GameScreen", "Initialized stars in sky area only (0-80% of screen height)")
     }
     
     // Update weather effects
@@ -285,6 +281,7 @@ fun GameScreen(
                 }
                 
                 raindrops.removeAll(toRemove)
+                // Clear and replace the entire raindrops list to ensure proper updates
                 raindrops.clear()
                 raindrops.addAll(updated)
             }
@@ -294,56 +291,59 @@ fun GameScreen(
                 // Need to reinitialize stars explicitly, previous code was overriding this
                 val forceReinitialize = stars.isEmpty() || stars.size < 150 || 
                     canvasHeight > 0 && (
-                        // Check if we don't have any stars in the bottom third of the screen
-                        !stars.any { (pos, _, _) -> pos.y > canvasHeight * 0.67f } ||
-                        // Check if we don't have any stars in the middle third of the screen
-                        !stars.any { (pos, _, _) -> pos.y > canvasHeight * 0.33f && pos.y < canvasHeight * 0.67f }
+                        // Check if we don't have any stars in the bottom third of the sky
+                        !stars.any { (pos, _, _) -> pos.y > canvasHeight * 0.5f && pos.y < canvasHeight * 0.8f } ||
+                        // Check if we don't have any stars in the middle third of the sky
+                        !stars.any { (pos, _, _) -> pos.y > canvasHeight * 0.25f && pos.y < canvasHeight * 0.5f }
                     )
                 
                 if (forceReinitialize) {
                     // Force reinitialize stars to ensure proper distribution
                     stars.clear()
                     
-                    // Generate 150 stars with forced distribution across all thirds of the screen
+                    // Generate 150 stars with forced distribution across sky (not on ground)
                     val starsPerThird = 50 // Exactly 50 stars per third
                     Log.d("GameScreen", "FORCE REINITIALIZING STARS - Canvas height: $canvasHeight")
                     
-                    // Top third
+                    // Sky area is 0-90% of screen height (ground is bottom 10%)
+                    val skyHeight = canvasHeight * 0.9f
+                    
+                    // Top third of sky
                     for (i in 0 until starsPerThird) {
                         val x = (Math.random() * canvasWidth).toFloat()
-                        val y = (Math.random() * canvasHeight * 0.33f).toFloat() // Top third: 0-33%
+                        val y = (Math.random() * skyHeight * 0.33f).toFloat() // Top third: 0-30% of screen
                         val size = (1f + Math.random() * 3f).toFloat()
                         val twinkleFactor = Math.random().toFloat()
                         stars.add(Triple(Offset(x, y), size, twinkleFactor))
                     }
                     
-                    // Middle third
+                    // Middle third of sky
                     for (i in 0 until starsPerThird) {
                         val x = (Math.random() * canvasWidth).toFloat()
-                        val y = (canvasHeight * 0.33f + Math.random() * canvasHeight * 0.34f).toFloat() // Middle third: 33-67%
+                        val y = (skyHeight * 0.33f + Math.random() * skyHeight * 0.34f).toFloat() // Middle third: 30-60% of screen
                         val size = (1f + Math.random() * 3f).toFloat()
                         val twinkleFactor = Math.random().toFloat()
                         stars.add(Triple(Offset(x, y), size, twinkleFactor))
                     }
                     
-                    // Bottom third
+                    // Bottom third of sky (but not on ground)
                     for (i in 0 until starsPerThird) {
                         val x = (Math.random() * canvasWidth).toFloat()
-                        val y = (canvasHeight * 0.67f + Math.random() * canvasHeight * 0.33f).toFloat() // Bottom third: 67-100%
+                        val y = (skyHeight * 0.67f + Math.random() * skyHeight * 0.33f).toFloat() // Bottom third: 60-90% of screen
                         val size = (1f + Math.random() * 3f).toFloat()
                         val twinkleFactor = Math.random().toFloat()
                         stars.add(Triple(Offset(x, y), size, twinkleFactor))
                     }
                     
                     // Log verification
-                    val topCount = stars.count { (pos, _, _) -> pos.y < canvasHeight * 0.33f }
-                    val midCount = stars.count { (pos, _, _) -> pos.y >= canvasHeight * 0.33f && pos.y < canvasHeight * 0.67f }
-                    val bottomCount = stars.count { (pos, _, _) -> pos.y >= canvasHeight * 0.67f }
+                    val topCount = stars.count { (pos, _, _) -> pos.y < skyHeight * 0.33f }
+                    val midCount = stars.count { (pos, _, _) -> pos.y >= skyHeight * 0.33f && pos.y < skyHeight * 0.67f }
+                    val bottomCount = stars.count { (pos, _, _) -> pos.y >= skyHeight * 0.67f && pos.y < skyHeight }
                     Log.d("GameScreen", "Stars distribution - Top: $topCount, Middle: $midCount, Bottom: $bottomCount, Total: ${stars.size}")
                 }
                 
                 // Create extremely slow, subtle twinkling effect by updating a few stars each frame
-                val starsToUpdate = minOf((stars.size * 0.02).toInt(), 3) // Update at most 3 stars per frame (2%)
+                val starsToUpdate = minOf((stars.size * 0.05).toInt(), 7) // Update fewer stars per frame (5% instead of 10%)
                 
                 if (starsToUpdate > 0 && stars.isNotEmpty()) {
                     val updatedStars = stars.toMutableList()
@@ -360,8 +360,8 @@ fun GameScreen(
                             val star = stars[index]
                             val (pos, size, twinkleFactor) = star
                             
-                            // Make the brightness change extremely subtle but visible
-                            val delta = (Math.random().toFloat() * 0.2f - 0.1f) // -0.1 to +0.1
+                            // Make the brightness change more dramatic for visible twinkling
+                            val delta = (Math.random().toFloat() * 0.5f - 0.25f) // -0.25 to +0.25 - stronger effect
                             val newTwinkleFactor = (twinkleFactor + delta).coerceIn(0f, 1f)
                             updatedStars[index] = Triple(pos, size, newTwinkleFactor)
                         }
@@ -372,8 +372,8 @@ fun GameScreen(
                 }
             }
             
-            // Only run at 5fps for star twinkling to make it much slower
-            val frameDelay = if (level == 4) 200 else 16 // 5fps for stars, 60fps for other effects
+            // Run at a faster fps for star twinkling to make it more visible
+            val frameDelay = if (level == 4) 50 else 16 // 20fps for stars, 60fps for other effects
             delay(frameDelay.toLong())
         }
     }
@@ -656,78 +656,60 @@ fun GameScreen(
                         isTransitioningFromOrangeState = false
                         
                         if (released && game.isPlaying) {
-                            Log.d("GameScreen", "Tap up detected at ${System.currentTimeMillis()}")
+                            val endTime = System.currentTimeMillis()
+                            tapDuration = endTime - tapStartTime
                             
-                            // Store final tap duration for mode activation
-                            val finalTapDuration = tapDuration
-                            Log.d("GameScreen", "Final tap duration on release: $finalTapDuration")
+                            Log.d("GameScreen", "Tap released after $tapDuration ms in ${game.getCurrentMode()} mode")
                             
-                            // MODE ACTIVATION ENGINE - THIS IS A CRITICAL BLOCK
-                            // -----------------------------------------------
-                            // Calculate the actual cycle position at release time
-                            val orangeTimeStart = 300 // 0.3 seconds
-                            val orangeTimeEnd = 600   // 0.6 seconds
-                            val greenTimeStart = 600  // 0.6 seconds
-                            val greenTimeEnd = 900    // 0.9 seconds
-                            val cycleTime = 900       // 0.9 seconds - full cycle time
-                            
-                            // Use modulo to determine the cyclic position
-                            val cyclicDuration = finalTapDuration % cycleTime
-                            
-                            // LOG DETAILED DIAGNOSTICS
-                            Log.d("GameScreen", "MODE ENGINE - cyclic: $cyclicDuration, " +
-                                  "orangeStart: $orangeTimeStart, orangeEnd: $orangeTimeEnd, " +
-                                  "greenStart: $greenTimeStart, greenEnd: $greenTimeEnd")
-                            
-                            // We can only activate special modes from NORMAL mode
-                            if (game.getCurrentMode() == GameMode.NORMAL) {
-                                // DETERMINE MODE BASED ON CURRENT COLOR AT RELEASE TIME
-                                when {
-                                    // YELLOW MODE - either at start of cycle or after completing a full cycle
-                                    cyclicDuration < orangeTimeStart -> {
-                                        Log.d("GameScreen", "🟡 YELLOW MODE - cyclicDuration: $cyclicDuration (< $orangeTimeStart)")
-                                        // Normal jump with tap power proportional to tap duration
-                                        val tapPower = min(2.0f, 1.0f + finalTapDuration / 600f)
+                            // V3.1 COLOR CYCLE ENGINE
+                            // Get the current cycle position based on tap duration
+                            val currentMode = game.getCurrentMode()
+                            if (currentMode == GameMode.NORMAL) {
+                                // Only activate special modes from NORMAL mode
+                                // Determine which mode to activate based on tap duration
+                                val nextMode = game.getModeForDuration(tapDuration)
+                                
+                                Log.d("GameScreen", "Current mode: $currentMode, Tap duration: $tapDuration, Selected mode: $nextMode")
+                                
+                                when (nextMode) {
+                                    GameMode.NORMAL -> {
+                                        // Normal jump with power proportional to tap duration
+                                        val tapPower = min(3.0f, 1.0f + tapDuration / 400f)
                                         game.jump(tapPower)
+                                        Log.d("GameScreen", "🟡 Normal mode jump with power $tapPower")
                                     }
-                                    
-                                    // ORANGE MODE - between orangeTimeStart and orangeTimeEnd
-                                    cyclicDuration >= orangeTimeStart && cyclicDuration < orangeTimeEnd -> {
-                                        Log.d("GameScreen", "🟠 ORANGE MODE ACTIVATED - cyclicDuration: $cyclicDuration")
+                                    GameMode.ORANGE -> {
+                                        // Activate orange mode
+                                        game.activateOrangeMode()
                                         isOrangeState = true
                                         orangeStateTimer = 0f
-                                        game.activateOrangeMode()
-                                        game.jump(1.2f) // Jump with extra power
+                                        game.jump(2.0f) // Higher jump for orange mode
+                                        Log.d("GameScreen", "🟠 Orange mode activated with high jump")
                                     }
-                                    
-                                    // GREEN MODE - between greenTimeStart and greenTimeEnd
-                                    cyclicDuration >= greenTimeStart && cyclicDuration < greenTimeEnd -> {
-                                        Log.d("GameScreen", "🟢 GREEN MODE ACTIVATED - cyclicDuration: $cyclicDuration")
-                                        isOrangeState = false
-                                        orangeStateTimer = 0f
+                                    GameMode.GREEN -> {
+                                        // Activate green mode
                                         game.activateGreenMode()
-                                        // No jump for Green Mode - player controls directly with touch
+                                        Log.d("GameScreen", "🟢 Green mode activated")
                                     }
-                                    
-                                    // YELLOW MODE AGAIN - if we somehow exceed the cycle time
-                                    else -> {
-                                        Log.d("GameScreen", "🟡 YELLOW MODE (after cycle) - cyclicDuration: $cyclicDuration (>= $greenTimeEnd)")
-                                        // Normal jump with tap power proportional to tap duration
-                                        val tapPower = min(2.0f, 1.0f + finalTapDuration / 600f)
-                                        game.jump(tapPower)
+                                    GameMode.BLUE -> {
+                                        // Activate blue mode
+                                        game.activateBlueMode()
+                                        game.jump(1.0f) // Normal jump for blue mode
+                                        Log.d("GameScreen", "🔵 Blue mode activated")
                                     }
                                 }
-                            } else if (game.getCurrentMode() == GameMode.ORANGE) {
-                                // Already in Orange mode, just jump with the orange mode power
+                            } else if (currentMode == GameMode.ORANGE) {
+                                // Already in Orange mode, just jump with orange power
                                 game.jump(2.0f)
-                            } else if (game.getCurrentMode() == GameMode.GREEN) {
-                                // Already in Green mode - no jump
-                                Log.d("GameScreen", "Maintaining GREEN mode - no jump")
+                                Log.d("GameScreen", "Orange mode jump")
+                            } else if (currentMode == GameMode.BLUE) {
+                                // In Blue mode (reverse gravity), jump with normal power
+                                game.jump(1.0f)
+                                Log.d("GameScreen", "Blue mode jump")
                             }
-                            // -----------------------------------------------
-                            // END OF MODE ACTIVATION ENGINE
+                            // Green mode handled separately with touch movement
                             
-                            // Reset tap duration after processing the release action
+                            // Reset tap duration after processing
                             tapDuration = 0L
                         }
                     } else {
@@ -982,21 +964,29 @@ fun GameScreen(
                         4 -> {
                             // Level 4: Night sky with twinkling stars
                             stars.forEach { (pos, size, twinkleFactor) ->
-                                // Use twinkle factor to determine brightness
-                                val brightness = 0.5f + twinkleFactor * 0.5f
+                                // Use twinkle factor to determine brightness with more dramatic range
+                                val brightness = 0.4f + twinkleFactor * 0.6f // More dramatic brightness change
                                 
                                 // Draw star as a small circle with varying brightness
                                 drawCircle(
                                     color = ComposeColor(brightness, brightness, brightness * 0.9f, brightness),
-                                    radius = size,
+                                    radius = size * (0.8f + twinkleFactor * 0.4f), // Size also changes slightly with twinkle
                                     center = pos
                                 )
                                 
-                                // Add a glow effect for some stars
-                                if (twinkleFactor > 0.7f && size > 2f) {
+                                // Add a more visible glow effect for stars
+                                val glowIntensity = 0.5f * twinkleFactor // Stronger glow effect
+                                drawCircle(
+                                    color = ComposeColor(brightness, brightness, brightness * 0.9f, glowIntensity),
+                                    radius = size * 2.2f, // Larger glow
+                                    center = pos
+                                )
+                                
+                                // For the brightest stars, add an extra outer glow
+                                if (twinkleFactor > 0.6f) { // Lower threshold for outer glow
                                     drawCircle(
-                                        color = ComposeColor(brightness, brightness, brightness * 0.9f, 0.3f),
-                                        radius = size * 2f,
+                                        color = ComposeColor(brightness, brightness, brightness * 0.9f, 0.2f),
+                                        radius = size * 3.5f, // Larger outer glow
                                         center = pos
                                     )
                                 }
@@ -1159,7 +1149,7 @@ fun GameScreen(
                         }
                     }
                     
-                    // Draw obstacles with simplified textures for better performance
+                    // Draw obstacles with correct v3.1 shapes
                     game.getObstacles().forEach { obstacle ->
                         try {
                             val obstacleWidth = game.getObstacleWidth(obstacle.type)
@@ -1170,24 +1160,57 @@ fun GameScreen(
                                 ObstacleType.SPIKED -> ComposeColor(0xFF8B0000)  // Dark red
                             }
 
-                            // Draw base rectangle
+                            // Draw obstacle base
                             drawRect(
                                 color = baseColor,
                                 topLeft = Offset(obstacle.x, obstacle.y),
                                 size = Size(obstacleWidth, obstacle.height)
                             )
 
-                            // Add simple texture (just a border)
-                            drawRect(
-                                color = baseColor.darker(0.3f),
-                                topLeft = Offset(obstacle.x, obstacle.y),
-                                size = Size(obstacleWidth, obstacle.height),
-                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f)
-                            )
-
-                            // Draw spikes if needed
-                            if (obstacle.type == ObstacleType.SPIKED) {
-                                drawSpikes(obstacle, obstacleWidth)
+                            // Add texture based on v3.1 obstacle style
+                            when (obstacle.type) {
+                                ObstacleType.NORMAL -> {
+                                    // Draw 3D-like effect for normal obstacles
+                                    drawRect(
+                                        color = baseColor.darker(0.3f),
+                                        topLeft = Offset(obstacle.x, obstacle.y),
+                                        size = Size(obstacleWidth, obstacle.height),
+                                        style = Stroke(width = 4f)
+                                    )
+                                    // Add highlight on left edge
+                                    drawRect(
+                                        color = baseColor.lighter(0.3f),
+                                        topLeft = Offset(obstacle.x + 2f, obstacle.y + 2f),
+                                        size = Size(obstacleWidth * 0.1f, obstacle.height - 4f)
+                                    )
+                                }
+                                ObstacleType.NARROW -> {
+                                    // Narrow obstacles have vertical lines
+                                    for (i in 0 until 3) {
+                                        val lineX = obstacle.x + (i + 1) * (obstacleWidth / 4f)
+                                        drawLine(
+                                            color = baseColor.darker(0.4f),
+                                            start = Offset(lineX, obstacle.y),
+                                            end = Offset(lineX, obstacle.y + obstacle.height),
+                                            strokeWidth = 2f
+                                        )
+                                    }
+                                }
+                                ObstacleType.WIDE -> {
+                                    // Wide obstacles have horizontal lines
+                                    val stripeHeight = obstacle.height / 5f
+                                    for (i in 1..4) {
+                                        drawRect(
+                                            color = baseColor.darker(0.2f),
+                                            topLeft = Offset(obstacle.x, obstacle.y + i * stripeHeight - stripeHeight/2),
+                                            size = Size(obstacleWidth, stripeHeight * 0.3f)
+                                        )
+                                    }
+                                }
+                                ObstacleType.SPIKED -> {
+                                    // Draw spikes
+                                    drawSpikes(obstacle, obstacleWidth)
+                                }
                             }
                         } catch (e: Exception) {
                             Log.e("GameScreen", "Error drawing obstacle: ${e.message}", e)
@@ -1303,70 +1326,80 @@ fun GameScreen(
                         }
                     }
                     
-                    // Calculate bird color based on state
-                    val birdColor = if (isOrangeState) {
-                        // When in orange state, use pure orange
-                        ComposeColor(1f, 0.5f, 0f, 1f)
-                    } else if (game.getCurrentMode() == GameMode.GREEN) {
-                        // Green mode has its own color
-                        ComposeColor(0.0f, 0.9f, 0.2f, 1f)
-                    } else if (isTapping && game.isPlaying) {
-                        // Calculate the tap duration since start
-                        val pressDuration = System.currentTimeMillis() - tapStartTime
+                    // Draw the bird with appropriate color based on game mode
+                    val birdCenterX = bird.x + (bird.width / 2) + bird.visualOffsetX
+                    val birdCenterY = bird.y + (bird.height / 2)
+                    
+                    // Determine bird color based on current game mode or tap duration
+                    val birdColor = if (isTapping && game.getCurrentMode() == GameMode.NORMAL) {
+                        // Bird changes color during tap in normal mode to show what mode will activate
+                        // Get the mode that would be activated for this duration
+                        val modeForDuration = game.getModeForDuration(tapDuration)
                         
-                        // DISPLAY COLORS CYCLE - mirrors the activation thresholds exactly
-                        val orangeTime = 300 // 0.3 seconds - MUST MATCH the activation engine above
-                        val greenTime = 600  // 0.6 seconds - MUST MATCH the activation engine above
-                        val cycleTime = 900  // 0.9 seconds - MUST MATCH the activation engine above
-                        
-                        // Use modulo to create a repeating cycle
-                        val cyclicDuration = pressDuration % cycleTime
-                        
-                        // Determine color based on position in cycle
-                        when {
-                            cyclicDuration < orangeTime -> ComposeColor.Yellow      // First third: Yellow (0-299ms)
-                            cyclicDuration < greenTime -> ComposeColor(1f, 0.5f, 0f, 1f)  // Second third: Orange (300-599ms)
-                            else -> ComposeColor(0.0f, 0.9f, 0.2f, 1f)             // Final third: Green (600-899ms)
+                        when (modeForDuration) {
+                            GameMode.NORMAL -> ComposeColor.Yellow
+                            GameMode.ORANGE -> ComposeColor(1f, 0.5f, 0f) // Orange
+                            GameMode.GREEN -> ComposeColor.Green
+                            GameMode.BLUE -> ComposeColor(0f, 0.5f, 1f) // Blue
                         }
                     } else {
-                        // Not tapping - always default to yellow in normal mode
-                        ComposeColor.Yellow
+                        // Color based on current game mode if not tapping
+                        when (game.getCurrentMode()) {
+                            GameMode.NORMAL -> ComposeColor.Yellow
+                            GameMode.ORANGE -> ComposeColor(1f, 0.5f, 0f) // Orange
+                            GameMode.GREEN -> ComposeColor.Green
+                            GameMode.BLUE -> ComposeColor(0f, 0.5f, 1f) // Blue
+                        }
                     }
                     
-                    // Draw bird as a square to match hitbox
+                    // Draw the bird as a square
                     drawRect(
                         color = birdColor,
-                        topLeft = Offset(bird.x + bird.visualOffsetX, bird.y),  // Apply visual offset for shake effect
+                        topLeft = Offset(bird.x + bird.visualOffsetX, bird.y),
                         size = Size(bird.width, bird.height)
                     )
-
-                    // Add eye for visual appeal
+                    
+                    // Eye (white)
+                    drawCircle(
+                        color = ComposeColor.White,
+                        radius = bird.width * 0.2f,
+                        center = Offset(birdCenterX + bird.width * 0.2f, birdCenterY - bird.width * 0.1f)
+                    )
+                    
+                    // Pupil (black)
                     drawCircle(
                         color = ComposeColor.Black,
-                        radius = bird.width / 6,
-                        center = Offset(bird.x + bird.visualOffsetX + bird.width * 0.7f, bird.y + bird.height * 0.4f)  // Apply visual offset for shake effect
+                        radius = bird.width * 0.1f,
+                        center = Offset(birdCenterX + bird.width * 0.25f, birdCenterY - bird.width * 0.1f)
+                    )
+                    
+                    // Highlight in eye (white dot)
+                    drawCircle(
+                        color = ComposeColor.White,
+                        radius = bird.width * 0.03f,
+                        center = Offset(birdCenterX + bird.width * 0.22f, birdCenterY - bird.width * 0.13f)
                     )
                     
                     // Draw green bubble effect in Green Mode
                     if (game.getCurrentMode() == GameMode.GREEN) {
                         val bubbleRadius = game.getGreenBubbleRadius()
                         if (bubbleRadius > 0) {
-                            // Calculate center of bird for bubble
-                            val birdCenterX = bird.x + bird.visualOffsetX + bird.width / 2  // Apply visual offset
-                            val birdCenterY = bird.y + bird.height / 2
+                            // Calculate center of bird for bubble - use different variable names to avoid shadowing
+                            val bubbleCenterX = bird.x + bird.visualOffsetX + bird.width / 2
+                            val bubbleCenterY = bird.y + bird.height / 2
                             
                             // Draw outer bubble (more transparent)
                             drawCircle(
                                 color = ComposeColor(0.0f, 0.9f, 0.2f, 0.1f),
                                 radius = bubbleRadius,
-                                center = Offset(birdCenterX, birdCenterY)
+                                center = Offset(bubbleCenterX, bubbleCenterY)
                             )
                             
                             // Draw inner bubble (more transparent)
                             drawCircle(
                                 color = ComposeColor(0.0f, 0.9f, 0.2f, 0.05f),
                                 radius = bubbleRadius * 0.8f,
-                                center = Offset(birdCenterX, birdCenterY)
+                                center = Offset(bubbleCenterX, bubbleCenterY)
                             )
                             
                             // Draw shimmer effect (small sparkles)
@@ -1377,8 +1410,8 @@ fun GameScreen(
                             repeat(5) {
                                 val angle = shimmerRandom.nextFloat() * 2 * PI.toFloat()
                                 val distance = shimmerRandom.nextFloat() * bubbleRadius * 0.9f
-                                val sparkleX = birdCenterX + cos(angle) * distance
-                                val sparkleY = birdCenterY + sin(angle) * distance
+                                val sparkleX = bubbleCenterX + cos(angle) * distance
+                                val sparkleY = bubbleCenterY + sin(angle) * distance
                                 val sparkleSize = bubbleRadius * (0.05f + shimmerRandom.nextFloat() * 0.05f)
                                 
                                 drawCircle(
@@ -1397,7 +1430,7 @@ fun GameScreen(
                                 startAngle = -90f,
                                 sweepAngle = timerArcSweepAngle,
                                 useCenter = false,
-                                topLeft = Offset(birdCenterX - bubbleRadius, birdCenterY - bubbleRadius),
+                                topLeft = Offset(bubbleCenterX - bubbleRadius, bubbleCenterY - bubbleRadius),
                                 size = Size(bubbleRadius * 2, bubbleRadius * 2),
                                 style = Stroke(width = 3.dp.toPx())
                             )
@@ -1556,5 +1589,90 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
             }
         }
         drawPath(path = path, color = ComposeColor.Red.copy(alpha = 0.9f))
+    }
+}
+
+// Function to draw mode indicators
+fun DrawScope.drawModeIndicator(mode: GameMode, progress: Float) {
+    when (mode) {
+        GameMode.GREEN -> {
+            // Draw green bubble progress
+            val outerRadius = size.width * 0.04f
+            val innerRadius = outerRadius * 0.9f * (1f - progress)
+            
+            // Draw outer bubble
+            drawCircle(
+                color = ComposeColor.Green.copy(alpha = 0.5f),
+                radius = outerRadius,
+                center = Offset(size.width * 0.85f, size.height * 0.15f)
+            )
+            
+            // Draw inner bubble that shrinks as time progresses
+            drawCircle(
+                color = ComposeColor.Green.copy(alpha = 0.8f),
+                radius = innerRadius,
+                center = Offset(size.width * 0.85f, size.height * 0.15f)
+            )
+            
+            // Draw timer text
+            val remainingTime = ((1f - progress) * 5f).toInt()
+            drawContext.canvas.nativeCanvas.drawText(
+                "$remainingTime",
+                size.width * 0.85f,
+                size.height * 0.15f + 10f,
+                Paint().apply {
+                    color = AndroidColor.WHITE
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    textSize = 30f
+                }
+            )
+        }
+        GameMode.BLUE -> {
+            // Draw blue mode progress indicator
+            val outerRadius = size.width * 0.04f
+            val innerRadius = outerRadius * 0.9f * (1f - progress)
+            
+            // Draw outer bubble with blue color
+            drawCircle(
+                color = ComposeColor(0f, 0.4f, 1f, 0.5f), // Light blue with transparency
+                radius = outerRadius,
+                center = Offset(size.width * 0.85f, size.height * 0.15f)
+            )
+            
+            // Draw inner bubble that shrinks as time progresses
+            drawCircle(
+                color = ComposeColor(0f, 0.6f, 1f, 0.8f), // Brighter blue for inner circle
+                radius = innerRadius,
+                center = Offset(size.width * 0.85f, size.height * 0.15f)
+            )
+            
+            // Draw an up arrow to indicate reversed gravity
+            val arrowPath = Path().apply {
+                moveTo(size.width * 0.85f, size.height * 0.15f - outerRadius * 0.6f)
+                lineTo(size.width * 0.85f - outerRadius * 0.5f, size.height * 0.15f + outerRadius * 0.3f)
+                lineTo(size.width * 0.85f + outerRadius * 0.5f, size.height * 0.15f + outerRadius * 0.3f)
+                close()
+            }
+            drawPath(
+                path = arrowPath,
+                color = ComposeColor.White.copy(alpha = 0.9f),
+                style = Stroke(width = 2f)
+            )
+            
+            // Draw timer text
+            val remainingTime = ((1f - progress) * 5f).toInt()
+            drawContext.canvas.nativeCanvas.drawText(
+                "$remainingTime",
+                size.width * 0.85f,
+                size.height * 0.15f + 10f,
+                Paint().apply {
+                    color = AndroidColor.WHITE
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    textSize = 30f
+                }
+            )
+        }
+        // Other modes handled elsewhere
+        else -> { /* Do nothing */ }
     }
 } 

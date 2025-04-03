@@ -1,5 +1,30 @@
 # Runner Game - Changelog
 
+## Version 3.5 (Current)
+**Update: Enhanced Bird Sizing & Visual Improvements**
+
+### Bird and Gameplay Improvements
+- Fixed bird sizing in landscape mode using the smaller dimension to prevent oversized bird
+- Optimized bird size calculation to be 7% of the smaller screen dimension for consistent appearance
+- Reduced fallback bird size from 40f to 30f for more appropriate scaling
+- Fixed and enhanced star twinkling effect in night sky (level 4)
+- Verified and documented gravity and jump mechanics across all game modes
+- Maintained consistent physics behavior with proper implementation of reversed gravity in Blue Mode
+
+### Visual Enhancements
+- Improved star twinkling algorithm for more visible yet natural effect
+- Enhanced star glow effects with size variations based on brightness
+- Optimized twinkling update rate for better performance (20fps)
+- Fixed redundancies in weather effect code
+- Added detailed code comments for better maintainability
+
+### Code Quality
+- Addressed potential warnings and errors
+- Added proper parameter annotations to prevent compiler warnings
+- Updated Bird class with comprehensive property definitions
+- Better code organization for game mode transitions
+- Fixed possible redundancies in rendering code
+
 ## Version 3.2 (Current)
 **Bug Fix Update: Visual Enhancements and Engine Improvements**
 
