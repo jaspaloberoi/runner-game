@@ -1153,11 +1153,32 @@ fun GameScreen(
                     game.getObstacles().forEach { obstacle ->
                         try {
                             val obstacleWidth = game.getObstacleWidth(obstacle.type)
-                            val baseColor = when (obstacle.type) {
-                                ObstacleType.NARROW -> ComposeColor(0xFF2E7D32)  // Medium green
-                                ObstacleType.NORMAL -> ComposeColor(0xFF1B5E20)  // Dark green
-                                ObstacleType.WIDE -> ComposeColor(0xFF388E3C)    // Forest green
-                                ObstacleType.SPIKED -> ComposeColor(0xFF8B0000)  // Dark red
+                            // Select base color based on level and obstacle type
+                            val baseColor = when (game.getLevel()) {
+                                1 -> when (obstacle.type) {
+                                    ObstacleType.NARROW -> ComposeColor(0xFF2E7D32)  // Medium green
+                                    ObstacleType.NORMAL -> ComposeColor(0xFF1B5E20)  // Dark green
+                                    ObstacleType.WIDE -> ComposeColor(0xFF388E3C)    // Forest green
+                                    ObstacleType.SPIKED -> ComposeColor(0xFF8B0000)  // Dark red
+                                }
+                                2 -> when (obstacle.type) {
+                                    ObstacleType.NARROW -> ComposeColor(0xFFCD853F)  // Sandy brown
+                                    ObstacleType.NORMAL -> ComposeColor(0xFFD2691E)  // Chocolate
+                                    ObstacleType.WIDE -> ComposeColor(0xFFA0522D)    // Sienna
+                                    ObstacleType.SPIKED -> ComposeColor(0xFF8B4513)  // Saddle brown
+                                }
+                                3 -> when (obstacle.type) {
+                                    ObstacleType.NARROW -> ComposeColor(0xFF4682B4)  // Steel blue
+                                    ObstacleType.NORMAL -> ComposeColor(0xFF1E90FF)  // Dodger blue
+                                    ObstacleType.WIDE -> ComposeColor(0xFF4169E1)    // Royal blue
+                                    ObstacleType.SPIKED -> ComposeColor(0xFF0000CD)  // Medium blue
+                                }
+                                else -> when (obstacle.type) {
+                                    ObstacleType.NARROW -> ComposeColor(0xFF9370DB)  // Medium purple
+                                    ObstacleType.NORMAL -> ComposeColor(0xFF8A2BE2)  // Violet
+                                    ObstacleType.WIDE -> ComposeColor(0xFF9400D3)    // Dark violet
+                                    ObstacleType.SPIKED -> ComposeColor(0xFF4B0082)  // Indigo
+                                }
                             }
 
                             // Draw obstacle base
@@ -1166,50 +1187,305 @@ fun GameScreen(
                                 topLeft = Offset(obstacle.x, obstacle.y),
                                 size = Size(obstacleWidth, obstacle.height)
                             )
+                            
+                            // Apply texture based on texture type if not SPIKED
+                            if (obstacle.type != ObstacleType.SPIKED) {
+                                when (obstacle.textureType) {
+                                    TextureType.DIAGONAL_BRICKS -> {
+                                        drawDiagonalBricks(obstacle, obstacleWidth, baseColor)
+                                    }
+                                    TextureType.HEXAGONAL -> {
+                                        drawHexagonalPattern(obstacle, obstacleWidth, baseColor)
+                                    }
+                                    else -> {
+                                        // Apply basic texture based on level
+                                    }
+                                }
+                            }
 
-                            // Add texture based on v3.1 obstacle style
-                            when (obstacle.type) {
-                                ObstacleType.NORMAL -> {
-                                    // Draw 3D-like effect for normal obstacles
-                                    drawRect(
-                                        color = baseColor.darker(0.3f),
-                                        topLeft = Offset(obstacle.x, obstacle.y),
-                                        size = Size(obstacleWidth, obstacle.height),
-                                        style = Stroke(width = 4f)
-                                    )
-                                    // Add highlight on left edge
-                                    drawRect(
-                                        color = baseColor.lighter(0.3f),
-                                        topLeft = Offset(obstacle.x + 2f, obstacle.y + 2f),
-                                        size = Size(obstacleWidth * 0.1f, obstacle.height - 4f)
-                                    )
-                                }
-                                ObstacleType.NARROW -> {
-                                    // Narrow obstacles have vertical lines
-                                    for (i in 0 until 3) {
-                                        val lineX = obstacle.x + (i + 1) * (obstacleWidth / 4f)
-                                        drawLine(
-                                            color = baseColor.darker(0.4f),
-                                            start = Offset(lineX, obstacle.y),
-                                            end = Offset(lineX, obstacle.y + obstacle.height),
-                                            strokeWidth = 2f
-                                        )
+                            // Apply textures based on level and obstacle type
+                            when (game.getLevel()) {
+                                1 -> { // Forest theme
+                                    when (obstacle.type) {
+                                        ObstacleType.NORMAL -> {
+                                            // Draw 3D-like effect for normal obstacles
+                                            drawRect(
+                                                color = baseColor.darker(0.3f),
+                                                topLeft = Offset(obstacle.x, obstacle.y),
+                                                size = Size(obstacleWidth, obstacle.height),
+                                                style = Stroke(width = 4f)
+                                            )
+                                            // Add highlight on left edge
+                                            drawRect(
+                                                color = baseColor.lighter(0.3f),
+                                                topLeft = Offset(obstacle.x + 2f, obstacle.y + 2f),
+                                                size = Size(obstacleWidth * 0.1f, obstacle.height - 4f)
+                                            )
+                                        }
+                                        ObstacleType.NARROW -> {
+                                            // Narrow obstacles have vertical lines
+                                            for (i in 0 until 3) {
+                                                val lineX = obstacle.x + (i + 1) * (obstacleWidth / 4f)
+                                                drawLine(
+                                                    color = baseColor.darker(0.4f),
+                                                    start = Offset(lineX, obstacle.y),
+                                                    end = Offset(lineX, obstacle.y + obstacle.height),
+                                                    strokeWidth = 2f
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.WIDE -> {
+                                            // Wide obstacles have horizontal lines
+                                            val stripeHeight = obstacle.height / 5f
+                                            for (i in 1..4) {
+                                                drawRect(
+                                                    color = baseColor.darker(0.2f),
+                                                    topLeft = Offset(obstacle.x, obstacle.y + i * stripeHeight - stripeHeight/2),
+                                                    size = Size(obstacleWidth, stripeHeight * 0.3f)
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.SPIKED -> {
+                                            // Draw spikes
+                                            drawSpikes(obstacle, obstacleWidth)
+                                        }
                                     }
                                 }
-                                ObstacleType.WIDE -> {
-                                    // Wide obstacles have horizontal lines
-                                    val stripeHeight = obstacle.height / 5f
-                                    for (i in 1..4) {
-                                        drawRect(
-                                            color = baseColor.darker(0.2f),
-                                            topLeft = Offset(obstacle.x, obstacle.y + i * stripeHeight - stripeHeight/2),
-                                            size = Size(obstacleWidth, stripeHeight * 0.3f)
-                                        )
+                                2 -> { // Desert/Canyon theme
+                                    when (obstacle.type) {
+                                        ObstacleType.NORMAL -> {
+                                            // Sandstone texture
+                                            for (i in 0 until 6) {
+                                                val lineY = obstacle.y + (i + 1) * (obstacle.height / 7f)
+                                                drawLine(
+                                                    color = baseColor.darker(0.2f),
+                                                    start = Offset(obstacle.x, lineY),
+                                                    end = Offset(obstacle.x + obstacleWidth, lineY),
+                                                    strokeWidth = 1.5f,
+                                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+                                                        floatArrayOf(5f, 3f), 0f
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.NARROW -> {
+                                            // Cactus-like texture
+                                            drawRect(
+                                                color = baseColor.darker(0.25f),
+                                                topLeft = Offset(obstacle.x + obstacleWidth * 0.1f, obstacle.y),
+                                                size = Size(obstacleWidth * 0.8f, obstacle.height),
+                                                style = Stroke(width = 2f)
+                                            )
+                                            // Cactus spines
+                                            for (i in 0 until 5) {
+                                                val y = obstacle.y + (i + 1) * (obstacle.height / 6f)
+                                                // Left spine
+                                                drawLine(
+                                                    color = baseColor.darker(0.4f),
+                                                    start = Offset(obstacle.x + obstacleWidth * 0.1f, y),
+                                                    end = Offset(obstacle.x, y - obstacleWidth * 0.1f),
+                                                    strokeWidth = 1.5f
+                                                )
+                                                // Right spine
+                                                drawLine(
+                                                    color = baseColor.darker(0.4f),
+                                                    start = Offset(obstacle.x + obstacleWidth * 0.9f, y),
+                                                    end = Offset(obstacle.x + obstacleWidth, y - obstacleWidth * 0.1f),
+                                                    strokeWidth = 1.5f
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.WIDE -> {
+                                            // Mesa/plateau texture
+                                            drawRect(
+                                                color = baseColor.darker(0.3f),
+                                                topLeft = Offset(obstacle.x, obstacle.y + obstacle.height * 0.9f),
+                                                size = Size(obstacleWidth, obstacle.height * 0.1f)
+                                            )
+                                            drawRect(
+                                                color = baseColor.lighter(0.2f),
+                                                topLeft = Offset(obstacle.x, obstacle.y),
+                                                size = Size(obstacleWidth, obstacle.height * 0.1f)
+                                            )
+                                        }
+                                        ObstacleType.SPIKED -> {
+                                            // Desert thorns
+                                            drawSpikes(obstacle, obstacleWidth)
+                                            // Add sand texture
+                                            for (i in 0 until 4) {
+                                                drawLine(
+                                                    color = baseColor.lighter(0.1f),
+                                                    start = Offset(obstacle.x, obstacle.y + obstacle.height * (0.2f + i * 0.2f)),
+                                                    end = Offset(obstacle.x + obstacleWidth, obstacle.y + obstacle.height * (0.2f + i * 0.2f)),
+                                                    strokeWidth = 1f,
+                                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+                                                        floatArrayOf(4f, 4f), 0f
+                                                    )
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                                ObstacleType.SPIKED -> {
-                                    // Draw spikes
-                                    drawSpikes(obstacle, obstacleWidth)
+                                3 -> { // Ocean/Water theme
+                                    when (obstacle.type) {
+                                        ObstacleType.NORMAL -> {
+                                            // Water waves
+                                            val waveHeight = obstacle.height / 8f
+                                            for (i in 0 until 4) {
+                                                val pathWave = Path().apply {
+                                                    val yStart = obstacle.y + (2 * i + 1) * waveHeight
+                                                    moveTo(obstacle.x, yStart)
+                                                    for (x in 0 until obstacleWidth.toInt() step 10) {
+                                                        val xPos = obstacle.x + x
+                                                        val yPos = yStart + sin(x * 0.2f) * waveHeight * 0.3f
+                                                        lineTo(xPos, yPos)
+                                                    }
+                                                    lineTo(obstacle.x + obstacleWidth, yStart)
+                                                }
+                                                drawPath(
+                                                    path = pathWave,
+                                                    color = baseColor.lighter(0.2f),
+                                                    style = Stroke(width = 2f)
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.NARROW -> {
+                                            // Coral texture
+                                            drawRect(
+                                                color = baseColor.darker(0.2f),
+                                                topLeft = Offset(obstacle.x, obstacle.y),
+                                                size = Size(obstacleWidth, obstacle.height),
+                                                style = Stroke(width = 3f)
+                                            )
+                                            // Coral branches
+                                            for (i in 0 until 3) {
+                                                val yStart = obstacle.y + obstacle.height * (0.3f + i * 0.3f)
+                                                val path = Path().apply {
+                                                    moveTo(obstacle.x + obstacleWidth / 2, yStart)
+                                                    lineTo(obstacle.x + obstacleWidth * 0.2f, yStart - obstacle.height * 0.1f)
+                                                    moveTo(obstacle.x + obstacleWidth / 2, yStart)
+                                                    lineTo(obstacle.x + obstacleWidth * 0.8f, yStart - obstacle.height * 0.1f)
+                                                }
+                                                drawPath(
+                                                    path = path,
+                                                    color = baseColor.lighter(0.3f),
+                                                    style = Stroke(width = 2f)
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.WIDE -> {
+                                            // Seaweed texture
+                                            for (i in 0 until 5) {
+                                                val xStart = obstacle.x + obstacleWidth * (0.2f + i * 0.15f)
+                                                val path = Path().apply {
+                                                    moveTo(xStart, obstacle.y + obstacle.height)
+                                                    var currentY = obstacle.y + obstacle.height
+                                                    while (currentY > obstacle.y) {
+                                                        currentY -= obstacle.height * 0.1f
+                                                        val xOffset = sin((obstacle.y + obstacle.height - currentY) * 0.1f) * obstacleWidth * 0.1f
+                                                        lineTo(xStart + xOffset, currentY)
+                                                    }
+                                                }
+                                                drawPath(
+                                                    path = path,
+                                                    color = baseColor.lighter(0.3f),
+                                                    style = Stroke(width = 2f)
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.SPIKED -> {
+                                            // Spiky sea urchin
+                                            drawSpikes(obstacle, obstacleWidth)
+                                            // Circular pattern
+                                            drawCircle(
+                                                color = baseColor.darker(0.3f),
+                                                radius = obstacleWidth * 0.2f,
+                                                center = Offset(
+                                                    obstacle.x + obstacleWidth / 2,
+                                                    obstacle.y + obstacle.height / 2
+                                                ),
+                                                style = Stroke(width = 2f)
+                                            )
+                                        }
+                                    }
+                                }
+                                else -> { // Space/Night theme (level 4)
+                                    when (obstacle.type) {
+                                        ObstacleType.NORMAL -> {
+                                            // Space station panels
+                                            drawRect(
+                                                color = baseColor.darker(0.3f),
+                                                topLeft = Offset(obstacle.x + obstacleWidth * 0.1f, obstacle.y + obstacle.height * 0.1f),
+                                                size = Size(obstacleWidth * 0.8f, obstacle.height * 0.8f),
+                                                style = Stroke(width = 2f)
+                                            )
+                                            // Grid pattern
+                                            for (i in 1..2) {
+                                                drawLine(
+                                                    color = baseColor.lighter(0.2f),
+                                                    start = Offset(obstacle.x + obstacleWidth * i / 3, obstacle.y),
+                                                    end = Offset(obstacle.x + obstacleWidth * i / 3, obstacle.y + obstacle.height),
+                                                    strokeWidth = 1.5f
+                                                )
+                                                drawLine(
+                                                    color = baseColor.lighter(0.2f),
+                                                    start = Offset(obstacle.x, obstacle.y + obstacle.height * i / 3),
+                                                    end = Offset(obstacle.x + obstacleWidth, obstacle.y + obstacle.height * i / 3),
+                                                    strokeWidth = 1.5f
+                                                )
+                                            }
+                                        }
+                                        ObstacleType.NARROW -> {
+                                            // Space crystal
+                                            val path = Path().apply {
+                                                moveTo(obstacle.x + obstacleWidth / 2, obstacle.y)
+                                                lineTo(obstacle.x + obstacleWidth, obstacle.y + obstacle.height * 0.3f)
+                                                lineTo(obstacle.x + obstacleWidth, obstacle.y + obstacle.height * 0.7f)
+                                                lineTo(obstacle.x + obstacleWidth / 2, obstacle.y + obstacle.height)
+                                                lineTo(obstacle.x, obstacle.y + obstacle.height * 0.7f)
+                                                lineTo(obstacle.x, obstacle.y + obstacle.height * 0.3f)
+                                                close()
+                                            }
+                                            drawPath(
+                                                path = path,
+                                                color = baseColor.lighter(0.1f),
+                                                style = Stroke(width = 2f)
+                                            )
+                                        }
+                                        ObstacleType.WIDE -> {
+                                            // Alien tech pattern
+                                            drawRect(
+                                                color = baseColor.darker(0.2f),
+                                                topLeft = Offset(obstacle.x, obstacle.y),
+                                                size = Size(obstacleWidth, obstacle.height),
+                                                style = Stroke(width = 3f)
+                                            )
+                                            
+                                            // Hexagonal pattern
+                                            val hexSize = obstacleWidth * 0.15f
+                                            val hexPath = createHexagonPath(
+                                                centerX = obstacle.x + obstacleWidth / 2,
+                                                centerY = obstacle.y + obstacle.height / 2,
+                                                radius = hexSize
+                                            )
+                                            drawPath(
+                                                path = hexPath,
+                                                color = baseColor.lighter(0.3f),
+                                                style = Stroke(width = 2f)
+                                            )
+                                        }
+                                        ObstacleType.SPIKED -> {
+                                            // Alien spikes
+                                            drawSpikes(obstacle, obstacleWidth)
+                                            // Add glowing effect
+                                            drawRect(
+                                                color = baseColor.copy(alpha = 0.3f),
+                                                topLeft = Offset(obstacle.x - 3f, obstacle.y - 3f),
+                                                size = Size(obstacleWidth + 6f, obstacle.height + 6f),
+                                                style = Stroke(width = 3f, pathEffect = androidx.compose.ui.graphics.PathEffect.cornerPathEffect(5f))
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         } catch (e: Exception) {
@@ -1575,20 +1851,147 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
         obstacle.y - spikeHeight
     }
     
+    // Get level from obstacle texture type - use a different approach since we can't access game here
+    // Map texture type to level (1-4)
+    val level = when (obstacle.textureType) {
+        TextureType.BASIC -> 1
+        TextureType.DIAGONAL_BRICKS -> 2
+        TextureType.HEXAGONAL -> 4
+        else -> 3 // Using 3 as default level
+    }
+    
+    // Select spike color based on level
+    val spikeColor = when (level) {
+        1 -> ComposeColor.Red.copy(alpha = 0.9f)  // Red spikes in forest level
+        2 -> ComposeColor(0xFFCC5500).copy(alpha = 0.9f)  // Burnt orange for desert
+        3 -> ComposeColor(0xFF4B0082).copy(alpha = 0.9f)  // Indigo for water level
+        else -> ComposeColor(0xFFFF00FF).copy(alpha = 0.85f)  // Magenta for space level
+    }
+    
+    // Add random variation to spike heights for more natural look
+    val rand = Random(obstacle.hashCode())
+    
     repeat(spikesPerObstacle) { i ->
+        // Add slight height variation
+        val heightVariation = if (level > 1) {
+            // More variation in higher levels
+            spikeHeight * (0.8f + rand.nextFloat() * 0.4f)
+        } else {
+            spikeHeight
+        }
+        
         val path = Path().apply {
             val x = obstacle.x + i * spikeSpacing
+            
             if (isTopObstacle) {
-                moveTo(x, spikeY)
-                lineTo(x + spikeWidth / 2, spikeY + spikeHeight)
-                lineTo(x + spikeWidth, spikeY)
+                // For top obstacles, spikes point down
+                when (level) {
+                    1 -> {
+                        // Basic triangular spikes
+                        moveTo(x, spikeY)
+                        lineTo(x + spikeWidth / 2, spikeY + heightVariation)
+                        lineTo(x + spikeWidth, spikeY)
+                    }
+                    2 -> {
+                        // Desert level: slightly curved spikes like thorns
+                        moveTo(x, spikeY)
+                        // Create curved spike with control points
+                        quadraticBezierTo(
+                            x + spikeWidth / 4, spikeY + heightVariation * 0.7f,
+                            x + spikeWidth / 2, spikeY + heightVariation
+                        )
+                        quadraticBezierTo(
+                            x + 3 * spikeWidth / 4, spikeY + heightVariation * 0.7f,
+                            x + spikeWidth, spikeY
+                        )
+                    }
+                    3 -> {
+                        // Water level: wavy spikes
+                        moveTo(x, spikeY)
+                        // Create wavy spike effect
+                        cubicTo(
+                            x + spikeWidth * 0.25f, spikeY + heightVariation * 0.4f,
+                            x + spikeWidth * 0.5f, spikeY + heightVariation * 0.6f,
+                            x + spikeWidth * 0.5f, spikeY + heightVariation
+                        )
+                        cubicTo(
+                            x + spikeWidth * 0.5f, spikeY + heightVariation * 0.6f,
+                            x + spikeWidth * 0.75f, spikeY + heightVariation * 0.4f,
+                            x + spikeWidth, spikeY
+                        )
+                    }
+                    else -> {
+                        // Space level: jagged spikes
+                        moveTo(x, spikeY)
+                        lineTo(x + spikeWidth * 0.3f, spikeY + heightVariation * 0.4f)
+                        lineTo(x + spikeWidth * 0.5f, spikeY + heightVariation)
+                        lineTo(x + spikeWidth * 0.7f, spikeY + heightVariation * 0.4f)
+                        lineTo(x + spikeWidth, spikeY)
+                    }
+                }
             } else {
-                moveTo(x, spikeY + spikeHeight)
-                lineTo(x + spikeWidth / 2, spikeY)
-                lineTo(x + spikeWidth, spikeY + spikeHeight)
+                // For bottom obstacles, spikes point up
+                when (level) {
+                    1 -> {
+                        // Basic triangular spikes
+                        moveTo(x, spikeY + heightVariation)
+                        lineTo(x + spikeWidth / 2, spikeY)
+                        lineTo(x + spikeWidth, spikeY + heightVariation)
+                    }
+                    2 -> {
+                        // Desert level: slightly curved spikes like thorns
+                        moveTo(x, spikeY + heightVariation)
+                        // Create curved spike with control points
+                        quadraticBezierTo(
+                            x + spikeWidth / 4, spikeY + heightVariation * 0.3f,
+                            x + spikeWidth / 2, spikeY
+                        )
+                        quadraticBezierTo(
+                            x + 3 * spikeWidth / 4, spikeY + heightVariation * 0.3f,
+                            x + spikeWidth, spikeY + heightVariation
+                        )
+                    }
+                    3 -> {
+                        // Water level: wavy spikes
+                        moveTo(x, spikeY + heightVariation)
+                        // Create wavy spike effect
+                        cubicTo(
+                            x + spikeWidth * 0.25f, spikeY + heightVariation * 0.6f,
+                            x + spikeWidth * 0.5f, spikeY + heightVariation * 0.4f,
+                            x + spikeWidth * 0.5f, spikeY
+                        )
+                        cubicTo(
+                            x + spikeWidth * 0.5f, spikeY + heightVariation * 0.4f,
+                            x + spikeWidth * 0.75f, spikeY + heightVariation * 0.6f,
+                            x + spikeWidth, spikeY + heightVariation
+                        )
+                    }
+                    else -> {
+                        // Space level: jagged spikes
+                        moveTo(x, spikeY + heightVariation)
+                        lineTo(x + spikeWidth * 0.3f, spikeY + heightVariation * 0.6f)
+                        lineTo(x + spikeWidth * 0.5f, spikeY)
+                        lineTo(x + spikeWidth * 0.7f, spikeY + heightVariation * 0.6f)
+                        lineTo(x + spikeWidth, spikeY + heightVariation)
+                    }
+                }
             }
         }
-        drawPath(path = path, color = ComposeColor.Red.copy(alpha = 0.9f))
+        
+        // Draw the spike path
+        drawPath(path = path, color = spikeColor)
+        
+        // Add highlight or glow effect to spikes in higher levels
+        if (level >= 3) {
+            drawPath(
+                path = path, 
+                color = spikeColor.copy(alpha = 0.4f),
+                style = Stroke(
+                    width = 2f,
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.cornerPathEffect(2f)
+                )
+            )
+        }
     }
 }
 
@@ -1676,3 +2079,73 @@ fun DrawScope.drawModeIndicator(mode: GameMode, progress: Float) {
         else -> { /* Do nothing */ }
     }
 } 
+
+// Add new functions to draw specific texture patterns
+private fun DrawScope.drawDiagonalBricks(obstacle: Obstacle, obstacleWidth: Float, baseColor: ComposeColor) {
+    val brickWidth = obstacleWidth / 4f
+    val brickHeight = obstacle.height / 7f
+    
+    // Draw diagonal brick pattern
+    for (row in 0 until 7) {
+        val rowOffset = if (row % 2 == 0) 0f else brickWidth / 2f
+        for (col in 0 until 4) {
+            val brickX = obstacle.x + col * brickWidth + rowOffset
+            val brickY = obstacle.y + row * brickHeight
+            
+            // Skip bricks that would be off the obstacle
+            if (brickX + brickWidth > obstacle.x + obstacleWidth) continue
+            
+            // Draw brick outline
+            drawRect(
+                color = baseColor.darker(0.3f),
+                topLeft = Offset(brickX, brickY),
+                size = Size(brickWidth - 1f, brickHeight - 1f),
+                style = Stroke(width = 1f)
+            )
+            
+            // Add brick highlight to give 3D effect
+            drawLine(
+                color = baseColor.lighter(0.2f),
+                start = Offset(brickX, brickY),
+                end = Offset(brickX + brickWidth - 1f, brickY),
+                strokeWidth = 1f
+            )
+            drawLine(
+                color = baseColor.lighter(0.2f),
+                start = Offset(brickX, brickY),
+                end = Offset(brickX, brickY + brickHeight - 1f),
+                strokeWidth = 1f
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawHexagonalPattern(obstacle: Obstacle, obstacleWidth: Float, baseColor: ComposeColor) {
+    val hexRadius = obstacleWidth / 10f
+    val horizontalSpacing = hexRadius * 1.8f
+    val verticalSpacing = hexRadius * 1.6f
+    
+    // Calculate number of hexagons to draw
+    val hexCols = (obstacleWidth / horizontalSpacing).toInt()
+    val hexRows = (obstacle.height / verticalSpacing).toInt()
+    
+    for (row in 0 until hexRows) {
+        val rowOffset = if (row % 2 == 0) 0f else horizontalSpacing / 2f
+        for (col in 0 until hexCols) {
+            val centerX = obstacle.x + col * horizontalSpacing + rowOffset + hexRadius
+            val centerY = obstacle.y + row * verticalSpacing + hexRadius
+            
+            // Skip hexagons that would be off the obstacle
+            if (centerX + hexRadius > obstacle.x + obstacleWidth || 
+                centerY + hexRadius > obstacle.y + obstacle.height) continue
+                
+            // Draw hexagon
+            val hexPath = createHexagonPath(centerX, centerY, hexRadius * 0.8f)
+            drawPath(
+                path = hexPath,
+                color = baseColor.darker(0.25f),
+                style = Stroke(width = 1.5f)
+            )
+        }
+    }
+}

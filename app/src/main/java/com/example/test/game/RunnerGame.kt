@@ -48,7 +48,8 @@ data class Obstacle(
     var passed: Boolean = false,
     val isMoving: Boolean = false,
     val moveSpeed: Float = 0f,
-    var movingUp: Boolean = false
+    var movingUp: Boolean = false,
+    val textureType: TextureType = TextureType.BASIC
 )
 
 class RunnerGame(
@@ -196,7 +197,9 @@ class RunnerGame(
         return bird!!
     }
     
-    fun getCurrentMode(): GameMode = currentMode
+    fun getCurrentMode(): GameMode {
+        return currentMode
+    }
     
     fun getObstacles(): List<Obstacle> = obstacles
     
@@ -215,7 +218,9 @@ class RunnerGame(
     
     fun getBlueModeProgress(): Float = blueModeTimer / blueModeDuration
     
-    fun getLevel(): Int = level
+    fun getLevel(): Int {
+        return level
+    }
     
     fun initialize(width: Float, height: Float) {
         screenWidth = width
@@ -480,61 +485,128 @@ class RunnerGame(
             }
             2 -> { // Level 2: More varied
                 when ((0..100).random()) {
-                    in 0..55 -> ObstacleType.NORMAL   // 55% chance
-                    in 56..75 -> ObstacleType.NARROW  // 20% chance
-                    in 76..90 -> ObstacleType.WIDE    // 15% chance
+                    in 0..45 -> ObstacleType.NORMAL   // 45% chance (reduced from 55%)
+                    in 46..70 -> ObstacleType.NARROW  // 25% chance (increased from 20%)
+                    in 71..90 -> ObstacleType.WIDE    // 20% chance (increased from 15%)
                     else -> ObstacleType.SPIKED       // 10% chance
                 }
             }
             3 -> { // Level 3: Harder
                 when ((0..100).random()) {
-                    in 0..40 -> ObstacleType.NORMAL   // 40% chance
-                    in 41..65 -> ObstacleType.NARROW  // 25% chance
-                    in 66..85 -> ObstacleType.WIDE    // 20% chance
+                    in 0..35 -> ObstacleType.NORMAL   // 35% chance (reduced from 40%)
+                    in 36..60 -> ObstacleType.NARROW  // 25% chance
+                    in 61..85 -> ObstacleType.WIDE    // 25% chance (increased from 20%)
                     else -> ObstacleType.SPIKED       // 15% chance
                 }
             }
             else -> { // Level 4: Hardest
                 when ((0..100).random()) {
-                    in 0..30 -> ObstacleType.NORMAL   // 30% chance
-                    in 31..55 -> ObstacleType.NARROW  // 25% chance
-                    in 56..80 -> ObstacleType.WIDE    // 25% chance
-                    else -> ObstacleType.SPIKED       // 20% chance
+                    in 0..25 -> ObstacleType.NORMAL   // 25% chance (reduced from 30%)
+                    in 26..50 -> ObstacleType.NARROW  // 25% chance
+                    in 51..75 -> ObstacleType.WIDE    // 25% chance
+                    else -> ObstacleType.SPIKED       // 25% chance (increased from 20%)
                 }
             }
         }
         
         // Determine if this is a moving obstacle - more common in higher levels
-        val movingObstacleChance = 10 * level // 10% in level 1, 40% in level 4
+        // Increased probability of moving obstacles in higher levels
+        val movingObstacleChance = when (level) {
+            1 -> 10  // 10% in level 1
+            2 -> 25  // 25% in level 2
+            3 -> 40  // 40% in level 3
+            else -> 60 // 60% in level 4
+        }
+        
         val isMoving = (0..100).random() < movingObstacleChance
         
         // Reset counter if this is a moving obstacle
         if (isMoving) {
             obstacleCounter = 0
-            nextMovingObstacleIn = (8..12).random()
+            // Reduced wait time between moving obstacles in higher levels
+            nextMovingObstacleIn = when (level) {
+                1 -> (8..12).random()
+                2 -> (6..10).random()
+                3 -> (4..8).random()
+                else -> (3..6).random()
+            }
         } else {
             obstacleCounter++
         }
         
         // Calculate height based on level progression - higher levels have taller obstacles
-        val minHeightMultiplier = 0.1f + (level * 0.02f) // Increases with level
-        val maxHeightMultiplier = 0.3f + (level * 0.05f) // Increases with level
+        val minHeightMultiplier = 0.1f + (level * 0.02f).coerceAtMost(0.08f) // Increases with level but capped
+        val maxHeightMultiplier = 0.3f + (level * 0.05f).coerceAtMost(0.2f) // Increases with level but capped
         
-        val minHeight = screenHeight * minHeightMultiplier.coerceAtMost(0.2f)
-        val maxHeight = screenHeight * maxHeightMultiplier.coerceAtMost(0.5f)
+        val minHeight = screenHeight * minHeightMultiplier
+        val maxHeight = screenHeight * maxHeightMultiplier
         
         val heightRange = maxHeight - minHeight
         val height = minHeight + (heightRange * Random.nextFloat())
         
         // Calculate position (top or bottom)
-        val y = if (Random.nextBoolean()) {
-            0f // Top aligned
+        val isTopAligned = Random.nextBoolean()
+        
+        // Ensure bird path is always available for avoiding obstacles
+        // This creates a safe corridor in the middle of the screen that prevents impossible obstacles
+        // Calculate minimum safe Y coordinates for obstacles to ensure a passable gap
+        val minSafeY = screenHeight * 0.3f
+        val maxSafeY = screenHeight * 0.7f - height
+        
+        val y = if (isTopAligned) {
+            // Make sure top obstacles don't extend too far down
+            val maxTopHeight = screenHeight * 0.4f
+            if (height > maxTopHeight) {
+                0f // Standard top alignment
+            } else {
+                0f // Standard top alignment
+            }
         } else {
-            screenHeight * 0.9f - height // Bottom aligned
+            // Make sure bottom obstacles don't extend too far up
+            // Ensure there's always a passable gap - bottom obstacles have to stay low enough
+            val calculatedY = screenHeight * 0.9f - height
+            // Ensure the obstacle doesn't go above the safe corridor
+            if (calculatedY < minSafeY) {
+                // If it would invade the safe corridor, push it down
+                maxSafeY
+            } else {
+                calculatedY
+            }
         }
         
-        // Movement speed for moving obstacles increases with level
-        val moveSpeed = if (isMoving) 100f + (level * 50f) else 0f
+        // Movement speed for moving obstacles increases with level but caps for playability
+        val baseSpeed = 100f + (level * 50f) 
+        val moveSpeed = if (isMoving) {
+            // Add slight randomization to movement speed for variety
+            baseSpeed * (0.8f + Random.nextFloat() * 0.4f)
+        } else {
+            0f
+        }
+        
+        // Add texture variation based on level
+        val textureType = when (level) {
+            1 -> TextureType.BASIC // Simple textures in level 1
+            2 -> {
+                // In level 2, use more diagonal brick textures
+                if (Random.nextFloat() < 0.6f) TextureType.DIAGONAL_BRICKS else TextureType.BASIC
+            }
+            3 -> {
+                // In level 3, use more varied textures
+                when ((0..100).random()) {
+                    in 0..40 -> TextureType.BASIC
+                    in 41..80 -> TextureType.DIAGONAL_BRICKS
+                    else -> TextureType.HEXAGONAL
+                }
+            }
+            else -> {
+                // In level 4, hexagonal is more common
+                when ((0..100).random()) {
+                    in 0..30 -> TextureType.BASIC
+                    in 31..60 -> TextureType.DIAGONAL_BRICKS
+                    else -> TextureType.HEXAGONAL
+                }
+            }
+        }
         
         return Obstacle(
             x = screenWidth,
@@ -543,7 +615,8 @@ class RunnerGame(
             type = type,
             isMoving = isMoving,
             moveSpeed = moveSpeed,
-            movingUp = Random.nextBoolean()
+            movingUp = Random.nextBoolean(),
+            textureType = textureType
         )
     }
     

@@ -1,6 +1,42 @@
 # Runner Game - Changelog
 
-## Version 3.5 (Current)
+## Version 4.0 (Current)
+**Feature Update: Enhanced Obstacle System & Level-Based Themes**
+
+### Improved Obstacle System
+- Implemented level-specific obstacle themes with unique visual designs:
+  - Level 1: Forest theme with wooden textures
+  - Level 2: Desert/Canyon theme with sandstone and cactus patterns
+  - Level 3: Ocean/Water theme with wave patterns and coral textures
+  - Level 4: Space/Night theme with alien technology and crystal designs
+- Added texture variation system with three distinct patterns:
+  - Basic textures for simple obstacles
+  - Diagonal brick patterns for more complex obstacles
+  - Hexagonal patterns for advanced obstacles in higher levels
+- Enhanced spike rendering with level-specific styles:
+  - Level 1: Traditional triangular spikes
+  - Level 2: Curved thorn-like spikes
+  - Level 3: Wavy water-inspired spikes
+  - Level 4: Jagged crystal-like spikes with glow effects
+
+### Gameplay Improvements
+- Implemented intelligent obstacle placement to ensure fair gameplay:
+  - Created safe corridor in middle of screen to prevent impossible-to-avoid obstacles
+  - Smart height limitations based on obstacle position and level difficulty
+  - Balanced obstacle heights for consistent and fair challenge
+- Increased moving obstacle frequency based on level (10% in Level 1 to 60% in Level 4)
+- Added randomized movement speeds to increase variety
+- Adjusted obstacle type distribution for better progression of difficulty
+- Reduced wait time between moving obstacles in higher levels
+
+### Technical Enhancements
+- Improved rendering performance for complex obstacle textures
+- Created reusable drawing functions for different texture types
+- Fixed collision detection to work with new obstacle shapes
+- Added smart height variation for more natural looking spikes
+- Optimized obstacle generation code for better performance
+
+## Version 3.5
 **Update: Enhanced Bird Sizing & Visual Improvements**
 
 ### Bird and Gameplay Improvements
