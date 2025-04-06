@@ -177,6 +177,21 @@ fun GameScreen(
     var stars = remember { mutableStateListOf<Triple<Offset, Float, Float>>() } // Position, size, twinkle factor
     var sunRays = remember { mutableStateListOf<Triple<Float, Float, Float>>() } // Angle, length, opacity
     
+    // Celebration properties
+    var celebrationParticles = remember { mutableStateListOf<Particle>() }
+    var showLevelCompletionText by remember { mutableStateOf(false) }
+    var completedLevel by remember { mutableStateOf(0) }
+    var levelCompletionTextStartTime by remember { mutableStateOf(0L) }
+    val levelCompletionTextDuration = 3000L // 3 seconds
+    
+    // Colors for particles based on level
+    val levelColors = mapOf(
+        1 to listOf(ComposeColor.Green, ComposeColor(0xFF006400), ComposeColor.White),
+        2 to listOf(ComposeColor.Yellow, ComposeColor.Red, ComposeColor(0xFFFF7F00)),
+        3 to listOf(ComposeColor.Blue, ComposeColor.Cyan, ComposeColor(0xFF87CEFA)),
+        4 to listOf(ComposeColor.Magenta, ComposeColor.White, ComposeColor.Cyan)
+    )
+    
     // Weather theme initialization
     LaunchedEffect(Unit) {
         // Initialize clouds for level 1 with better distribution
@@ -385,7 +400,81 @@ fun GameScreen(
         isShaking = true
         shakeDuration = 10 // Shake for 10 frames
     }
-
+    
+    // Function to create celebration particles when a level is completed
+    fun createCelebrationParticles(level: Int, canvasWidth: Float, canvasHeight: Float) {
+        // Get appropriate colors for the level
+        val colors = levelColors[level] ?: listOf(ComposeColor.White)
+        
+        // Create explosion of particles from the center
+        val centerX = canvasWidth / 2
+        val centerY = canvasHeight / 2
+        
+        // Clear existing particles
+        celebrationParticles.clear()
+        
+        // Create 100 particles
+        for (i in 0 until 100) {
+            // Random angle for the particle
+            val angle = (Math.random() * 2 * Math.PI).toFloat()
+            
+            // Random speed (faster for more dramatic effect)
+            val speed = (2f + Math.random() *.8f).toFloat()
+            
+            // Calculate velocity components
+            val vx = speed * cos(angle)
+            val vy = speed * sin(angle)
+            
+            // Random size 
+            val size = (5f + Math.random() * 15f).toFloat()
+            
+            // Random color from the level's color palette
+            val color = colors.random()
+            
+            // Random lifetime
+            val lifetime = (1.5f + Math.random() * 1.5f).toFloat()
+            
+            // Random rotation speed
+            val rotationSpeed = (Math.random() * 10 - 5).toFloat()
+            
+            // Create and add the particle
+            val particle = Particle(
+                position = Offset(centerX, centerY),
+                velocity = Offset(vx, vy),
+                size = size,
+                color = color,
+                lifetime = lifetime,
+                rotationSpeed = rotationSpeed
+            )
+            
+            celebrationParticles.add(particle)
+        }
+        
+        // Show level completion text
+        showLevelCompletionText = true
+        completedLevel = level
+        levelCompletionTextStartTime = System.currentTimeMillis()
+        Log.d("GameScreen", "Created celebration for Level $level completion!")
+    }
+    
+    // Function to check if the game is celebrating a level completion
+    fun checkForLevelCompletion() {
+        if (game.isCelebrating()) {
+            val level = game.getLastCompletedLevel()
+            if (level > 0 && !showLevelCompletionText) {
+                createCelebrationParticles(level, canvasSize.width, canvasSize.height)
+                Log.d("GameScreen", "Detected level completion: Level $level")
+            }
+        } else if (showLevelCompletionText) {
+            // Check if text display duration has elapsed
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - levelCompletionTextStartTime > levelCompletionTextDuration) {
+                showLevelCompletionText = false
+                Log.d("GameScreen", "Level completion text hidden")
+            }
+        }
+    }
+    
     // Game update loop
     LaunchedEffect(Unit) {
         while (true) {
@@ -512,6 +601,24 @@ fun GameScreen(
                             isShaking = false
                             shakeOffset = Offset(0f, 0f)
                         }
+                    }
+                    
+                    // Check for level completion and celebration
+                    checkForLevelCompletion()
+                    
+                    // Update celebration particles
+                    if (celebrationParticles.isNotEmpty()) {
+                        val particlesToKeep = mutableListOf<Particle>()
+                        
+                        for (particle in celebrationParticles) {
+                            particle.update(deltaTimeSeconds)
+                            if (!particle.isDead()) {
+                                particlesToKeep.add(particle)
+                            }
+                        }
+                        
+                        celebrationParticles.clear()
+                        celebrationParticles.addAll(particlesToKeep)
                     }
                     
                     // Increment frame key to force Canvas redraw
@@ -1752,6 +1859,61 @@ fun GameScreen(
                             drawText("Tap to start", width / 2f, height / 2f, paint)
                         }
                     }
+                    
+                    // Draw celebration particles
+                    if (celebrationParticles.isNotEmpty()) {
+                        for (particle in celebrationParticles) {
+                            rotate(particle.rotationAngle, particle.position) {
+                                drawCircle(
+                                    color = particle.color.copy(alpha = particle.alpha),
+                                    radius = particle.size,
+                                    center = particle.position
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Draw level completion text
+                    if (showLevelCompletionText) {
+                        val textPaint = Paint().apply {
+                            color = AndroidColor.WHITE
+                            textSize = 80f
+                            textAlign = Paint.Align.CENTER
+                        }
+                        
+                        val shadowPaint = Paint().apply {
+                            color = AndroidColor.BLACK
+                            textSize = 80f
+                            textAlign = Paint.Align.CENTER
+                        }
+                        
+                        // Calculate animation progress (0-1)
+                        val currentTime = System.currentTimeMillis()
+                        val timeElapsed = currentTime - levelCompletionTextStartTime
+                        val progress = (timeElapsed.toFloat() / levelCompletionTextDuration).coerceIn(0f, 1f)
+                        
+                        // Apply animation (scale up during first half of duration, then scale down)
+                        val scaleProgress = if (progress < 0.5f) {
+                            // Scale up from 0.5 to 1.2 during first half
+                            0.5f + (progress * 1.4f)
+                        } else {
+                            // Scale down from 1.2 to 1.0 during second half
+                            1.2f - ((progress - 0.5f) * 0.4f)
+                        }
+                        
+                        // Apply animation to text size
+                        val animatedTextSize = 80f * scaleProgress
+                        textPaint.textSize = animatedTextSize
+                        shadowPaint.textSize = animatedTextSize
+                        
+                        // Draw text with shadow
+                        drawContext.canvas.nativeCanvas.apply {
+                            // Draw shadow
+                            drawText("Level $completedLevel Completed!", width / 2f + 3f, height / 2f + 3f, shadowPaint)
+                            // Draw text
+                            drawText("Level $completedLevel Completed!", width / 2f, height / 2f, textPaint)
+                        }
+                    }
                 } catch (e: Exception) {
                     Log.e("GameScreen", "Error in Canvas drawing: ${e.message}", e)
                 }
@@ -1911,6 +2073,43 @@ private enum class LevelType {
     DESERT,    // Level 2
     WATER,     // Level 3
     SPACE      // Level 4
+}
+
+// Particle class for level celebration animations
+private data class Particle(
+    var position: Offset,
+    var velocity: Offset,
+    var acceleration: Offset = Offset(0f, 0.05f), // Gravity effect
+    var size: Float,
+    var color: ComposeColor,
+    var alpha: Float = 1f,
+    var rotationAngle: Float = 0f,
+    var rotationSpeed: Float = 0f,
+    var lifetime: Float = 2f, // Seconds
+    var timeAlive: Float = 0f
+) {
+    fun update(deltaTime: Float) {
+        // Update position
+        velocity = Offset(
+            velocity.x + acceleration.x * deltaTime,
+            velocity.y + acceleration.y * deltaTime
+        )
+        position = Offset(
+            position.x + velocity.x * deltaTime * 60f, // Scale by 60 for frame-rate independence
+            position.y + velocity.y * deltaTime * 60f
+        )
+        
+        // Update rotation
+        rotationAngle += rotationSpeed * deltaTime * 60f
+        
+        // Update lifetime
+        timeAlive += deltaTime
+        
+        // Fade out as lifetime progresses
+        alpha = 1f - (timeAlive / lifetime)
+    }
+    
+    fun isDead(): Boolean = timeAlive >= lifetime
 }
 
 // Helper function to convert TextureType to LevelType
