@@ -131,7 +131,8 @@ fun GameScreen(
     LaunchedEffect(Unit) {
         try {
             highScore = game.getHighScore()
-            Log.d("GameScreen", "Successfully loaded high score from game: $highScore")
+            isPaused = game.isPaused
+            Log.d("GameScreen", "Successfully loaded high score from game: $highScore, isPaused: $isPaused")
         } catch (e: Exception) {
             Log.e("GameScreen", "Error loading high score: ${e.message}", e)
         }
@@ -1972,7 +1973,7 @@ fun GameScreen(
                     Button(
                         onClick = {
                             game.resume()
-                            isPaused = false
+                            isPaused = game.isPaused
                             Log.d("GameScreen", "Game resumed from pause overlay")
                         },
                         modifier = Modifier.padding(8.dp)

@@ -100,6 +100,14 @@ class RunnerGame(
     private var levelSoundStartTime = 0L
     private var isPlayingLevelSound = false
     
+    // Level celebration properties
+    private var isCelebrating = false
+    private var celebrationStartTime = 0L
+    private var celebrationDuration = 3000L // 3 seconds celebration pause
+    private var completedLevels = mutableSetOf<Int>() // Levels completed this session
+    private var lastCompletedLevel = 0 // Last level completed
+    private var pendingLevelChange = false // Flag to indicate we need to advance to next level after celebration
+    
     // Jump mechanics
     private var fallSpeedMultiplier = 1.5f  // Bird falls faster by this factor
     
@@ -164,6 +172,9 @@ class RunnerGame(
         // Load high score
         highScore = loadHighScore()
         
+        // Load completed levels
+        loadCompletedLevels()
+        
         // Initialize randomized mode cycle
         randomizeModeCycle()
         
@@ -183,6 +194,28 @@ class RunnerGame(
             sharedPreferences.edit().putInt("high_score", score).apply()
             Log.d("RunnerGame", "New high score saved: $highScore")
         }
+    }
+    
+    private fun loadCompletedLevels() {
+        // Convert string set to integer set
+        val levelStrSet = sharedPreferences.getStringSet("completed_levels", setOf()) ?: setOf()
+        completedLevels.clear()
+        levelStrSet.forEach {
+            try {
+                completedLevels.add(it.toInt())
+            } catch (e: Exception) {
+                Log.e("RunnerGame", "Error parsing level: $it", e)
+            }
+        }
+        Log.d("RunnerGame", "Loaded completed levels: $completedLevels")
+    }
+    
+    private fun saveCompletedLevel(level: Int) {
+        completedLevels.add(level)
+        // Convert int set to string set for storage
+        val levelStrSet = completedLevels.map { it.toString() }.toSet()
+        sharedPreferences.edit().putStringSet("completed_levels", levelStrSet).apply()
+        Log.d("RunnerGame", "Saved completed level: $level")
     }
 
     // Additional methods would go here in a real implementation
@@ -276,6 +309,35 @@ class RunnerGame(
         
         try {
             val currentTime = System.currentTimeMillis()
+            
+            // Handle celebration state
+            if (isCelebrating) {
+                // Check if celebration duration has passed
+                if (currentTime - celebrationStartTime > celebrationDuration) {
+                    // End celebration
+                    isCelebrating = false
+                    
+                    // Now that celebration is complete, advance to the next level if needed
+                    if (pendingLevelChange) {
+                        // Cycle through levels 1-4
+                        level = (level % 4) + 1
+                        
+                        // V3.1 obstacle spacing adjustment based on level
+                        currentObstacleSpacing = screenWidth * (0.5f - (level * 0.05f)).coerceAtLeast(0.3f)
+                        
+                        // Reset the flag
+                        pendingLevelChange = false
+                        
+                        Log.d("RunnerGame", "Advancing to level $level after celebration")
+                    }
+                    
+                    Log.d("RunnerGame", "Level celebration ended")
+                } else {
+                    // Skip updates during celebration, but continue rendering
+                    return
+                }
+            }
+            
             val deltaTime = (currentTime - lastUpdateTime) / 1000f
             lastUpdateTime = currentTime
             
@@ -705,8 +767,8 @@ class RunnerGame(
             saveHighScore(score)
                     }
                     
-                    // Check if we need to level up - every 2 obstacles in v3.1
-                    if (obstaclesPassed >= 2) {
+                    // Check if we need to level up - every 5 obstacles now (changed from 2)
+                    if (obstaclesPassed >= 5) {
                         levelUp()
                     }
                     
@@ -718,10 +780,19 @@ class RunnerGame(
     
     private fun levelUp() {
         obstaclesPassed = 0  // Reset counter
-        level = (level % 4) + 1  // Cycle through levels 1-4
         
-        // V3.1 obstacle spacing adjustment based on level
-        currentObstacleSpacing = screenWidth * (0.5f - (level * 0.05f)).coerceAtLeast(0.3f)
+        // Save the current level as the completed level
+        lastCompletedLevel = level
+        
+        // Save completed level to persistent storage
+        saveCompletedLevel(level)
+        
+        // Set flag to change level after celebration
+        pendingLevelChange = true
+        
+        // Start celebration state
+        isCelebrating = true
+        celebrationStartTime = System.currentTimeMillis()
         
         // Play level up sound
         try {
@@ -732,7 +803,7 @@ class RunnerGame(
             Log.e("RunnerGame", "Error playing level up sound: ${e.message}", e)
         }
         
-        Log.d("RunnerGame", "LEVEL UP! Now at level $level with spacing $currentObstacleSpacing")
+        Log.d("RunnerGame", "🎉 LEVEL $level COMPLETED! Starting celebration...")
     }
     
     private fun updateShakeEffect() {
@@ -879,6 +950,20 @@ class RunnerGame(
     fun getScore(): Int = score
     
     fun getHighScore(): Int = highScore
+    
+    // Level celebration methods
+    fun isCelebrating(): Boolean = isCelebrating
+    
+    fun getLastCompletedLevel(): Int = lastCompletedLevel
+    
+    fun getCelebrationProgress(): Float {
+        val currentTime = System.currentTimeMillis()
+        val elapsed = currentTime - celebrationStartTime
+        return (elapsed.toFloat() / celebrationDuration).coerceIn(0f, 1f)
+    }
+    
+    // Get completed levels
+    fun getCompletedLevels(): Set<Int> = completedLevels.toSet()
     
     // Start a new game
     fun start() {
