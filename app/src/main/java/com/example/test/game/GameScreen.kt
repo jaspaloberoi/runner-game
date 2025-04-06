@@ -1,6 +1,6 @@
+@file:Suppress("REDUNDANT_ELSE_IN_WHEN")
+
 package com.example.test.game
-
-
 
 /**
  * Runner Game - Version 3.2
@@ -1922,11 +1922,12 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
     
     // Get level from obstacle texture type - use a different approach since we can't access game here
     // Map texture type to level (1-4)
+    @Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")  // Add this annotation to suppress the warning
     val level = when (obstacle.textureType) {
         TextureType.BASIC -> 1
         TextureType.DIAGONAL_BRICKS -> 2
         TextureType.HEXAGONAL -> 4
-        else -> 3 // Using 3 as default level
+        else -> 3 // Using 3 as default level for future-proofing
     }
     
     // Select spike color based on level
@@ -1954,6 +1955,7 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
             
             if (isTopObstacle) {
                 // For top obstacles, spikes point down
+                @Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
                 when (level) {
                     1 -> {
                         // Basic triangular spikes
@@ -2000,6 +2002,7 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
                 }
             } else {
                 // For bottom obstacles, spikes point up
+                @Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
                 when (level) {
                     1 -> {
                         // Basic triangular spikes
@@ -2066,6 +2069,7 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
 
 // Function to draw mode indicators
 fun DrawScope.drawModeIndicator(mode: GameMode, progress: Float) {
+    @Suppress("REDUNDANT_ELSE_IN_WHEN", "WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
     when (mode) {
         GameMode.GREEN -> {
             // Draw green bubble progress
@@ -2144,10 +2148,11 @@ fun DrawScope.drawModeIndicator(mode: GameMode, progress: Float) {
                 }
             )
         }
-        // Other modes handled elsewhere
-        else -> { /* Do nothing */ }
+        GameMode.NORMAL, GameMode.ORANGE -> {
+            // No indicators needed for these modes
+        }
     }
-} 
+}
 
 // Add new functions to draw specific texture patterns
 private fun DrawScope.drawDiagonalBricks(obstacle: Obstacle, obstacleWidth: Float, baseColor: ComposeColor) {
