@@ -115,19 +115,49 @@ class SoundManager(private val context: Context) {
 
     fun playDoubleBeepSound() {
         try {
-            // Use the jump sound as a fallback since double beep doesn't exist
-            playJumpSound()
-            // Play it a second time with a slight delay to create a "double" effect
-            // Use a handler to avoid blocking the UI thread
+            // Play a more distinct sequence to clearly indicate level completion
+            soundPool?.play(scoreSoundId, 1.0f, 1.0f, 1, 0, 1.5f)
+            
+            // Play it again slightly higher pitched after a delay
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 try {
-                    playJumpSound()
+                    soundPool?.play(scoreSoundId, 1.0f, 1.0f, 1, 0, 2.0f)
                 } catch (e: Exception) {
                     Log.e("SoundManager", "Error playing second beep: ${e.message}")
                 }
-            }, 100)
+            }, 200)
+            
+            // And one final higher pitched sound
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    soundPool?.play(scoreSoundId, 1.0f, 1.0f, 1, 0, 2.5f)
+                } catch (e: Exception) {
+                    Log.e("SoundManager", "Error playing final beep: ${e.message}")
+                }
+            }, 400)
+            
+            Log.d("SoundManager", "Playing LEVEL UP sound sequence")
         } catch (e: Exception) {
-            Log.e("SoundManager", "Error playing double beep sound: ${e.message}")
+            Log.e("SoundManager", "Error playing level up sound: ${e.message}")
+        }
+    }
+
+    fun playGhostDeactivateSound() {
+        try {
+            // Play a descending sound to indicate mode deactivation
+            soundPool?.play(jumpSoundId, 0.7f, 0.7f, 1, 0, 0.8f)
+            
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    soundPool?.play(jumpSoundId, 0.6f, 0.6f, 1, 0, 0.7f)
+                } catch (e: Exception) {
+                    Log.e("SoundManager", "Error playing ghost deactivate sound: ${e.message}")
+                }
+            }, 100)
+            
+            Log.d("SoundManager", "Playing GHOST DEACTIVATE sound")
+        } catch (e: Exception) {
+            Log.e("SoundManager", "Error playing ghost deactivate sound: ${e.message}")
         }
     }
 

@@ -758,21 +758,23 @@ class RunnerGame(
                     obstacles[obstacleIndex] = obstacle.copy(passed = true)
                     
                     // Increment score and play sound
-                score++
+                    score++
                     obstaclesPassed++ // Increment counter for level progression
                     soundManager.playScoreSound()
                     
                     // Update high score if needed
                     if (score > highScore) {
-            saveHighScore(score)
+                        saveHighScore(score)
                     }
+                    
+                    // More detailed logging for debugging
+                    Log.d("RunnerGame", "Obstacle passed! Score: $score, Obstacles passed: $obstaclesPassed, Level: $level")
                     
                     // Check if we need to level up - every 5 obstacles now (changed from 2)
                     if (obstaclesPassed >= 5) {
+                        Log.d("RunnerGame", "LEVEL UP TRIGGERED - Obstacles passed: $obstaclesPassed")
                         levelUp()
                     }
-                    
-                    Log.d("RunnerGame", "Obstacle passed! Score: $score, Obstacles passed: $obstaclesPassed")
                 }
             }
         }
@@ -911,7 +913,8 @@ class RunnerGame(
             if (previousMode == GameMode.GREEN) {
                 // Play sound when exiting Green Mode
                 try {
-                    soundManager.playDoubleBeepSound()
+                    // Use a different sound for exiting GREEN mode
+                    soundManager.playGhostDeactivateSound()
                 } catch (e: Exception) {
                     Log.e("RunnerGame", "Error playing Green Mode deactivation sound: ${e.message}", e)
                 }
