@@ -1,5 +1,3 @@
-@file:Suppress("REDUNDANT_ELSE_IN_WHEN")
-
 package com.example.test.game
 
 /**
@@ -1907,6 +1905,44 @@ private fun createHexagonPath(centerX: Float, centerY: Float, radius: Float): Pa
     }
 }
 
+// Create a proper enum for game levels
+private enum class LevelType {
+    FOREST,    // Level 1
+    DESERT,    // Level 2
+    WATER,     // Level 3
+    SPACE      // Level 4
+}
+
+// Helper function to convert TextureType to LevelType
+private fun TextureType.toLevelType(): LevelType = when(this) {
+    TextureType.BASIC -> LevelType.FOREST
+    TextureType.DIAGONAL_BRICKS -> LevelType.DESERT
+    TextureType.HEXAGONAL -> LevelType.SPACE
+}
+
+// Helper function to map TextureType to a level number
+private fun TextureType.toLevelNumber(): Int = when(this) {
+    TextureType.BASIC -> 1
+    TextureType.DIAGONAL_BRICKS -> 2
+    TextureType.HEXAGONAL -> 4
+}
+
+// Helper function to determine if this is a water-type level (level 3)
+// Note: In the original code, level 3 was used as a default, but didn't map directly to a texture
+private fun Obstacle.isWaterLevel(): Boolean {
+    // We'll use a different property to identify water levels
+    // In this case, we'll consider moving obstacles with BASIC texture as water levels
+    return this.isMoving && this.textureType == TextureType.BASIC
+}
+
+// Helper function to get spike color based on level type
+private fun getLevelColor(levelType: LevelType): ComposeColor = when(levelType) {
+    LevelType.FOREST -> ComposeColor.Red.copy(alpha = 0.9f)
+    LevelType.DESERT -> ComposeColor(0xFFCC5500).copy(alpha = 0.9f)
+    LevelType.WATER -> ComposeColor(0xFF4B0082).copy(alpha = 0.9f) 
+    LevelType.SPACE -> ComposeColor(0xFFFF00FF).copy(alpha = 0.85f)
+}
+
 private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
     val spikeHeight = 20.dp.toPx()
     val spikeWidth = 10.dp.toPx()
@@ -1920,23 +1956,18 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
         obstacle.y - spikeHeight
     }
     
-    // Get level from obstacle texture type - use a different approach since we can't access game here
-    // Map texture type to level (1-4)
-    @Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")  // Add this annotation to suppress the warning
-    val level = when (obstacle.textureType) {
-        TextureType.BASIC -> 1
-        TextureType.DIAGONAL_BRICKS -> 2
-        TextureType.HEXAGONAL -> 4
-        else -> 3 // Using 3 as default level for future-proofing
+    // Use the helper functions to get level information
+    // Special case: check if this is a water level
+    val levelType = if (obstacle.isWaterLevel()) {
+        LevelType.WATER
+    } else {
+        obstacle.textureType.toLevelType()
     }
     
-    // Select spike color based on level
-    val spikeColor = when (level) {
-        1 -> ComposeColor.Red.copy(alpha = 0.9f)  // Red spikes in forest level
-        2 -> ComposeColor(0xFFCC5500).copy(alpha = 0.9f)  // Burnt orange for desert
-        3 -> ComposeColor(0xFF4B0082).copy(alpha = 0.9f)  // Indigo for water level
-        else -> ComposeColor(0xFFFF00FF).copy(alpha = 0.85f)  // Magenta for space level
-    }
+    val level = obstacle.textureType.toLevelNumber()
+    
+    // Get spike color from level type
+    val spikeColor = getLevelColor(levelType)
     
     // Add random variation to spike heights for more natural look
     val rand = Random(obstacle.hashCode())
@@ -1955,15 +1986,14 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
             
             if (isTopObstacle) {
                 // For top obstacles, spikes point down
-                @Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
-                when (level) {
-                    1 -> {
+                when (levelType) {
+                    LevelType.FOREST -> {
                         // Basic triangular spikes
                         moveTo(x, spikeY)
                         lineTo(x + spikeWidth / 2, spikeY + heightVariation)
                         lineTo(x + spikeWidth, spikeY)
                     }
-                    2 -> {
+                    LevelType.DESERT -> {
                         // Desert level: slightly curved spikes like thorns
                         moveTo(x, spikeY)
                         // Create curved spike with control points
@@ -1976,7 +2006,7 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
                             x + spikeWidth, spikeY
                         )
                     }
-                    3 -> {
+                    LevelType.WATER -> {
                         // Water level: wavy spikes
                         moveTo(x, spikeY)
                         // Create wavy spike effect
@@ -1991,7 +2021,7 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
                             x + spikeWidth, spikeY
                         )
                     }
-                    else -> {
+                    LevelType.SPACE -> {
                         // Space level: jagged spikes
                         moveTo(x, spikeY)
                         lineTo(x + spikeWidth * 0.3f, spikeY + heightVariation * 0.4f)
@@ -2002,15 +2032,14 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
                 }
             } else {
                 // For bottom obstacles, spikes point up
-                @Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
-                when (level) {
-                    1 -> {
+                when (levelType) {
+                    LevelType.FOREST -> {
                         // Basic triangular spikes
                         moveTo(x, spikeY + heightVariation)
                         lineTo(x + spikeWidth / 2, spikeY)
                         lineTo(x + spikeWidth, spikeY + heightVariation)
                     }
-                    2 -> {
+                    LevelType.DESERT -> {
                         // Desert level: slightly curved spikes like thorns
                         moveTo(x, spikeY + heightVariation)
                         // Create curved spike with control points
@@ -2023,7 +2052,7 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
                             x + spikeWidth, spikeY + heightVariation
                         )
                     }
-                    3 -> {
+                    LevelType.WATER -> {
                         // Water level: wavy spikes
                         moveTo(x, spikeY + heightVariation)
                         // Create wavy spike effect
@@ -2038,7 +2067,7 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
                             x + spikeWidth, spikeY + heightVariation
                         )
                     }
-                    else -> {
+                    LevelType.SPACE -> {
                         // Space level: jagged spikes
                         moveTo(x, spikeY + heightVariation)
                         lineTo(x + spikeWidth * 0.3f, spikeY + heightVariation * 0.6f)
@@ -2069,7 +2098,6 @@ private fun DrawScope.drawSpikes(obstacle: Obstacle, obstacleWidth: Float) {
 
 // Function to draw mode indicators
 fun DrawScope.drawModeIndicator(mode: GameMode, progress: Float) {
-    @Suppress("REDUNDANT_ELSE_IN_WHEN", "WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
     when (mode) {
         GameMode.GREEN -> {
             // Draw green bubble progress
