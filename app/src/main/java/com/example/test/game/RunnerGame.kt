@@ -69,6 +69,8 @@ class RunnerGame(
     // Game state
     var isPlaying = false
         private set
+    var isPaused = false
+        private set
     private var score = 0
     private var highScore = 0
     private val sharedPreferences = context.getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
@@ -182,7 +184,7 @@ class RunnerGame(
             Log.d("RunnerGame", "New high score saved: $highScore")
         }
     }
-    
+
     // Additional methods would go here in a real implementation
     
     // Critical methods needed for the game to function with our bird drawing code
@@ -259,7 +261,7 @@ class RunnerGame(
         // Mark as initialized and set to NORMAL mode
         initialized = true
         currentMode = GameMode.NORMAL
-        speedMultiplier = 1.0f
+            speedMultiplier = 1.0f
         
         // Randomize mode cycle
         randomizeModeCycle()
@@ -268,7 +270,7 @@ class RunnerGame(
     }
     
     fun update() {
-        if (!initialized || !isPlaying) {
+        if (!initialized || !isPlaying || isPaused) {
             return
         }
         
@@ -339,11 +341,11 @@ class RunnerGame(
         if (isTransitioningToNormal && !isBirdShaking) {
             val timeSinceTransition = System.currentTimeMillis() - transitionStartTime
             if (timeSinceTransition > 500) { // Wait a bit after shake ends
-                completeTransitionToNormal()
+                    completeTransitionToNormal()
+                }
             }
         }
-    }
-    
+        
     @Suppress("UNUSED_PARAMETER")
     private fun updateBird(deltaTime: Float) {
         // Skip the bird physics update if we're in Green Mode (user controls directly)
@@ -377,8 +379,8 @@ class RunnerGame(
             b.x = screenWidth * 0.2f
             
             // Only handle ceiling collisions here, ground collisions are handled in checkCollisions()
-            if (b.y < 0f) {
-                b.y = 0f
+                if (b.y < 0f) {
+                    b.y = 0f
                 b.velocityY = Math.abs(b.velocityY) * 0.5f // Bounce with dampening
             }
             
@@ -633,10 +635,10 @@ class RunnerGame(
                 } else {
                     // All other modes die on ground collision
                     Log.d("RunnerGame", "Bird hit the ground in ${currentMode} mode! Game over.")
-                    isPlaying = false
-                    soundManager.playCollisionSound()
+                isPlaying = false
+                soundManager.playCollisionSound()
                     saveHighScore(score)
-                    return
+                return
                 }
             }
             
@@ -686,7 +688,7 @@ class RunnerGame(
     
     private fun updateScore() {
         bird?.let { b ->
-            for (obstacle in obstacles) {
+        for (obstacle in obstacles) {
                 // Check if bird has passed an obstacle that hasn't been counted yet
                 if (!obstacle.passed && b.x > obstacle.x + getObstacleWidth(obstacle.type)) {
                     // Mark as passed and update score
@@ -694,13 +696,13 @@ class RunnerGame(
                     obstacles[obstacleIndex] = obstacle.copy(passed = true)
                     
                     // Increment score and play sound
-                    score++
+                score++
                     obstaclesPassed++ // Increment counter for level progression
                     soundManager.playScoreSound()
                     
                     // Update high score if needed
                     if (score > highScore) {
-                        saveHighScore(score)
+            saveHighScore(score)
                     }
                     
                     // Check if we need to level up - every 2 obstacles in v3.1
@@ -855,7 +857,7 @@ class RunnerGame(
             Log.d("RunnerGame", "Normal Mode activated directly. Speed multiplier: $speedMultiplier")
         }
     }
-    
+
     // Helper method to set mode without side effects
     private fun setMode(mode: GameMode, source: String) {
         val previous = currentMode
@@ -1029,6 +1031,33 @@ class RunnerGame(
     
     // Add method to get cycle time
     fun getCycleTime(): Int = cycleTime
+
+    fun togglePause() {
+        if (isPlaying) {
+            isPaused = !isPaused
+            Log.d("RunnerGame", "Game ${if (isPaused) "paused" else "resumed"}")
+            
+            // If resuming, reset the last update time to prevent time jumps
+            if (!isPaused) {
+                lastUpdateTime = System.currentTimeMillis()
+            }
+        }
+    }
+
+    fun pause() {
+        if (isPlaying && !isPaused) {
+            isPaused = true
+            Log.d("RunnerGame", "Game paused")
+        }
+    }
+
+    fun resume() {
+        if (isPlaying && isPaused) {
+            isPaused = false
+            lastUpdateTime = System.currentTimeMillis()
+            Log.d("RunnerGame", "Game resumed")
+        }
+    }
 }
 
 // Bird class - Fixed to match v3.1 exactly

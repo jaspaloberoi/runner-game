@@ -30,6 +30,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -124,6 +127,7 @@ fun GameScreen(
     // Use mutableStateOf for reactive state values
     var score by remember { mutableStateOf(0) }
     var highScore by remember { mutableStateOf(0) }
+    var isPaused by remember { mutableStateOf(false) }
     
     // Load initial high score from the game's SharedPreferences
     LaunchedEffect(Unit) {
@@ -404,8 +408,8 @@ fun GameScreen(
                     // Check if game was playing but is now stopped (collision)
                     val wasPlaying = game.isPlaying
                     
-                    // Only update the game if it's in "playing" state (gameState = 1)
-                    if (gameState == 1) {
+                    // Only update the game if it's in "playing" state (gameState = 1) and not paused
+                    if (gameState == 1 && !isPaused) {
                         game.update() // Ensure this gets called every frame to update game state
                     }
                     
@@ -579,18 +583,20 @@ fun GameScreen(
             if (event == Lifecycle.Event.ON_PAUSE) {
                 // Pause the game when app goes to background
                 Log.d("GameScreen", "App paused - pausing game")
-                // This ensures we reset to normal mode when paused to prevent mode getting stuck
                 if (game.isPlaying) {
-                    game.setNormalMode()
+                    game.pause()
+                    isPaused = true
                 }
             } else if (event == Lifecycle.Event.ON_RESUME) {
                 Log.d("GameScreen", "App resumed")
-                // Check current mode when app returns to foreground to ensure it's in the expected state
+                // Check current mode when app returns to foreground
                 val currentMode = game.getCurrentMode()
                 if (currentMode != GameMode.NORMAL) {
                     Log.w("GameScreen", "Game resumed in non-normal mode: $currentMode - resetting to normal")
                     game.setNormalMode()
                 }
+                
+                // Don't automatically resume - let the user tap the resume button
             }
         }
         
@@ -1750,6 +1756,69 @@ fun GameScreen(
                     }
                 } catch (e: Exception) {
                     Log.e("GameScreen", "Error in Canvas drawing: ${e.message}", e)
+                }
+            }
+        }
+        
+        // Add pause button when game is playing
+        if (game.isPlaying && gameState == 1) {
+            IconButton(
+                onClick = {
+                    game.togglePause()
+                    isPaused = game.isPaused
+                    Log.d("GameScreen", "Pause button clicked, isPaused: $isPaused")
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .size(48.dp)
+                    .background(
+                        color = ComposeColor.White.copy(alpha = 0.7f),
+                        shape = CircleShape
+                    )
+            ) {
+                Text(
+                    text = if (isPaused) "▶" else "❚❚",
+                    style = TextStyle(
+                        color = ComposeColor.Black,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            }
+        }
+        
+        // Add pause overlay when game is paused
+        if (isPaused) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(ComposeColor.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        "PAUSED",
+                        style = TextStyle(
+                            color = ComposeColor.White,
+                            fontSize = 40.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                    
+                    Button(
+                        onClick = {
+                            game.resume()
+                            isPaused = false
+                            Log.d("GameScreen", "Game resumed from pause overlay")
+                        },
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Text("RESUME", fontSize = 18.sp)
+                    }
                 }
             }
         }
